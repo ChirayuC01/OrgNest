@@ -24,7 +24,8 @@ model User {
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
+  auditLogs AuditLog[]
 }
 
 model Task {
@@ -36,6 +37,19 @@ model Task {
 
   assignedTo String?
   createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String?
+  userId    String
+  tenantId  String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 enum Role {
