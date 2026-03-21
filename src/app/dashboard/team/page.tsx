@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useUserStore } from "@/store/userStore";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuthStore } from "@/store/authStore";
+import { toast } from "sonner";
 
 export default function TeamPage() {
   useAuth();
@@ -46,8 +47,9 @@ export default function TeamPage() {
         password: "",
         role: "EMPLOYEE",
       });
+      toast.success("User invited successfully");
     } else {
-      alert(data.error);
+      toast.error(data.error);
     }
   };
 
