@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/helper/requireAuth";
 import { hashPassword } from "@/lib/hash";
+import { createAuditLog } from "@/lib/audit";
 
 // GET - fetch all users in tenant
 export async function GET(req: Request) {
@@ -74,6 +75,18 @@ export async function POST(req: Request) {
                 password: hashedPassword,
                 role,
                 tenantId: admin.tenantId, // CRITICAL
+            },
+        });
+
+        await createAuditLog({
+            action: "CREATE_USER",
+            entity: "User",
+            entityId: user.id,
+            userId: admin.userId,
+            tenantId: admin.tenantId,
+            metadata: {
+                email: user.email,
+                role: user.role,
             },
         });
 

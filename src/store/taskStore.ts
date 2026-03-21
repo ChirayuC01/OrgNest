@@ -39,8 +39,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
             const res = await fetch(`/api/tasks?page=${page}`, {
                 headers: {
-                    Authorization: `Bearer ${token}`,
+                    // Authorization: `Bearer ${token}`,
                 },
+                credentials: "include",
             });
 
             const data = await res.json();

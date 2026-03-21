@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/helper/requireAuth";
+import { createAuditLog } from "@/lib/audit";
 
 // GET (any logged-in user)
 export async function GET(req: Request) {
@@ -44,6 +45,17 @@ export async function POST(req: Request) {
                 status: status || "pending",
                 tenantId: user.tenantId,
                 assignedTo,
+            },
+        });
+
+        await createAuditLog({
+            action: "CREATE_TASK",
+            entity: "Task",
+            entityId: task.id,
+            userId: user.userId,
+            tenantId: user.tenantId,
+            metadata: {
+                title: task.title,
             },
         });
 

@@ -27,6 +27,7 @@ export default function DashboardLayout({
         <nav className="flex flex-col gap-2">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/dashboard/team">Team</Link>
+          <Link href="/dashboard/audit">Audit Logs</Link>
         </nav>
 
         <div className="mt-auto pt-4 border-t border-gray-700">

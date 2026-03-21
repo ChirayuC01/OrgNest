@@ -27,8 +27,9 @@ export const useUserStore = create<UserState>((set) => ({
 
             const res = await fetch("/api/users", {
                 headers: {
-                    Authorization: `Bearer ${token}`,
+                    // Authorization: `Bearer ${token}`,
                 },
+                credentials: "include",
             });
 
             const data = await res.json();

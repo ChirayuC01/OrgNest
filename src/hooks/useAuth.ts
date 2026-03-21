@@ -7,10 +7,12 @@ export function useAuth() {
     const router = useRouter();
 
     useEffect(() => {
-        const token = localStorage.getItem("token");
-
-        if (!token) {
-            router.push("/login");
-        }
+        fetch("/api/auth/me", {
+            credentials: "include",
+        }).then((res) => {
+            if (!res.ok) {
+                router.push("/login");
+            }
+        });
     }, []);
 }

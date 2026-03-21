@@ -31,9 +31,10 @@ export default function TeamPage() {
     const res = await fetch("/api/users", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        // Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
+      credentials: "include",
       body: JSON.stringify(form),
     });
 

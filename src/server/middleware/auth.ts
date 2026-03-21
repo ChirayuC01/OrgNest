@@ -1,19 +1,20 @@
 import { verifyToken } from "@/lib/verify";
 
 export async function authMiddleware(req: Request) {
-    const authHeader = req.headers.get("authorization");
+    const cookieHeader = req.headers.get("cookie");
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        throw new Error("Unauthorized");
-    }
+    if (!cookieHeader) throw new Error("Unauthorized");
 
-    const token = authHeader.split(" ")[1];
+    const token = cookieHeader
+        .split("; ")
+        .find((c) => c.startsWith("token="))
+        ?.split("=")[1];
+
+    if (!token) throw new Error("Unauthorized");
 
     const decoded = verifyToken(token);
 
-    if (!decoded) {
-        throw new Error("Invalid token");
-    }
+    if (!decoded) throw new Error("Invalid token");
 
     return decoded as {
         userId: string;
