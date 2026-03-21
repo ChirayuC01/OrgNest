@@ -2,6 +2,32 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/helper/requireAuth";
 import { hashPassword } from "@/lib/hash";
 
+// GET - fetch all users in tenant
+export async function GET(req: Request) {
+    try {
+        const user = await requireAuth(req);
+
+        const users = await prisma.user.findMany({
+            where: {
+                tenantId: user.tenantId,
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+            },
+        });
+
+        return Response.json(users);
+    } catch (error: any) {
+        return Response.json(
+            { error: error.message },
+            { status: 401 }
+        );
+    }
+}
+
 export async function POST(req: Request) {
     try {
         // Only ADMIN can create users

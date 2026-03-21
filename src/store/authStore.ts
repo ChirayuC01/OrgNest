@@ -10,7 +10,9 @@ type User = {
 type AuthState = {
     user: User | null;
     token: string | null;
+
     setAuth: (user: User, token: string) => void;
+    loadFromStorage: () => void;
     logout: () => void;
 };
 
@@ -23,6 +25,18 @@ export const useAuthStore = create<AuthState>((set) => ({
         localStorage.setItem("user", JSON.stringify(user));
 
         set({ user, token });
+    },
+
+    loadFromStorage: () => {
+        const token = localStorage.getItem("token");
+        const user = localStorage.getItem("user");
+
+        if (token && user) {
+            set({
+                token,
+                user: JSON.parse(user),
+            });
+        }
     },
 
     logout: () => {

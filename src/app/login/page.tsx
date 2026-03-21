@@ -20,6 +20,8 @@ export default function LoginPage() {
     const data = await res.json();
 
     if (res.ok) {
+      console.log("data----", data);
+
       // store token
       localStorage.setItem("token", data.token);
       setAuth(data.user, data.token);
