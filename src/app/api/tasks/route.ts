@@ -6,13 +6,22 @@ export async function GET(req: Request) {
     try {
         const user = await requireAuth(req);
 
+        const { searchParams } = new URL(req.url);
+        const page = Number(searchParams.get("page") || "1");
+        const limit = 5;
+
         const tasks = await prisma.task.findMany({
             where: {
                 tenantId: user.tenantId,
             },
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: {
+                createdAt: "desc",
+            },
         });
 
-        return Response.json(tasks);
+        return Response.json({ tasks });
     } catch (error: any) {
         return Response.json(
             { error: error.message },
