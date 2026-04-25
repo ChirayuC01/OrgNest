@@ -3,17 +3,24 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 
+type AuditLog = {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  createdAt: string;
+  user: { name: string; email: string };
+};
+
 export default function AuditPage() {
   useAuth();
 
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {
-    fetch("/api/audit", {
-      credentials: "include",
-    })
+    fetch("/api/audit", { credentials: "include" })
       .then((res) => res.json())
-      .then(setLogs);
+      .then((json) => setLogs(json.data ?? []));
   }, []);
 
   return (
@@ -31,9 +38,7 @@ export default function AuditPage() {
               {log.entity} ({log.entityId})
             </p>
 
-            <p className="text-xs text-gray-400">
-              {new Date(log.createdAt).toLocaleString()}
-            </p>
+            <p className="text-xs text-gray-400">{new Date(log.createdAt).toLocaleString()}</p>
           </div>
         ))}
       </div>

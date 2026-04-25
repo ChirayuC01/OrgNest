@@ -8,6 +8,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -24,10 +25,7 @@ export default function Dashboard() {
       </div>
 
       {hasMore && (
-        <button
-          onClick={fetchTasks}
-          className="mt-4 bg-black text-white px-4 py-2"
-        >
+        <button onClick={fetchTasks} className="mt-4 bg-black text-white px-4 py-2 rounded">
           {loading ? "Loading..." : "Load More"}
         </button>
       )}

@@ -1,48 +1,50 @@
 import { create } from "zustand";
 
-type User = {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
+export type AuthRole = "ADMIN" | "MANAGER" | "EMPLOYEE";
+
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: AuthRole;
+  tenantId: string;
 };
 
 type AuthState = {
-    user: User | null;
-    token: string | null;
+  user: AuthUser | null;
+  isLoading: boolean;
 
-    setAuth: (user: User, token: string) => void;
-    loadFromStorage: () => void;
-    logout: () => void;
+  setUser: (user: AuthUser | null) => void;
+  initAuth: () => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
-    user: null,
-    token: null,
+  user: null,
+  isLoading: true,
 
-    setAuth: (user, token) => {
-        localStorage.setItem("token", token);
-        localStorage.setItem("user", JSON.stringify(user));
+  setUser: (user) => set({ user }),
 
-        set({ user, token });
-    },
+  initAuth: async () => {
+    try {
+      set({ isLoading: true });
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (res.ok) {
+        const json = await res.json();
+        set({ user: json.data, isLoading: false });
+      } else {
+        set({ user: null, isLoading: false });
+      }
+    } catch {
+      set({ user: null, isLoading: false });
+    }
+  },
 
-    loadFromStorage: () => {
-        const token = localStorage.getItem("token");
-        const user = localStorage.getItem("user");
-
-        if (token && user) {
-            set({
-                token,
-                user: JSON.parse(user),
-            });
-        }
-    },
-
-    logout: () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-
-        set({ user: null, token: null });
-    },
+  logout: async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } finally {
+      set({ user: null });
+    }
+  },
 }));

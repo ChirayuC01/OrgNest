@@ -1,49 +1,36 @@
 import { create } from "zustand";
 
-type User = {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
+export type StoreUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 };
 
 type UserState = {
-    users: User[];
-    loading: boolean;
+  users: StoreUser[];
+  loading: boolean;
 
-    fetchUsers: () => Promise<void>;
-    addUser: (user: User) => void;
+  fetchUsers: () => Promise<void>;
+  addUser: (user: StoreUser) => void;
 };
 
 export const useUserStore = create<UserState>((set) => ({
-    users: [],
-    loading: false,
+  users: [],
+  loading: false,
 
-    fetchUsers: async () => {
-        set({ loading: true });
+  fetchUsers: async () => {
+    set({ loading: true });
+    try {
+      const res = await fetch("/api/users", { credentials: "include" });
+      const json = await res.json();
+      set({ users: json.data ?? [] });
+    } catch {
+      // silently fail — middleware will handle auth errors
+    } finally {
+      set({ loading: false });
+    }
+  },
 
-        try {
-            const token = localStorage.getItem("token");
-
-            const res = await fetch("/api/users", {
-                headers: {
-                    // Authorization: `Bearer ${token}`,
-                },
-                credentials: "include",
-            });
-
-            const data = await res.json();
-
-            set({ users: data });
-        } catch (err) {
-            console.error(err);
-        } finally {
-            set({ loading: false });
-        }
-    },
-
-    addUser: (user) =>
-        set((state) => ({
-            users: [...state.users, user],
-        })),
+  addUser: (user) => set((state) => ({ users: [...state.users, user] })),
 }));

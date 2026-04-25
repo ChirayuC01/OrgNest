@@ -1,78 +1,91 @@
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/hash";
-import { generateToken } from "@/lib/auth";
+import { generateAccessToken, generateRefreshToken } from "@/lib/auth";
+import { error } from "@/helper/apiResponse";
+
+const signupSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").max(100),
+  email: z.string().email("Invalid email address"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(100),
+  organizationName: z
+    .string()
+    .min(1, "Organization name is required")
+    .max(255),
+});
 
 export async function POST(req: Request) {
-    try {
-        const body = await req.json();
-        const { name, email, password, organizationName } = body;
+  try {
+    const body = await req.json();
+    const parsed = signupSchema.safeParse(body);
 
-        // Basic validation
-        if (!name || !email || !password || !organizationName) {
-            return Response.json(
-                { error: "All fields are required" },
-                { status: 400 }
-            );
-        }
-
-        // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email },
-        });
-
-        if (existingUser) {
-            return Response.json(
-                { error: "User already exists" },
-                { status: 400 }
-            );
-        }
-
-        // Hash password
-        const hashedPassword = await hashPassword(password);
-
-        // Create Tenant + Admin User (transaction)
-        const result = await prisma.$transaction(async (tx) => {
-            const tenant = await tx.tenant.create({
-                data: {
-                    name: organizationName,
-                },
-            });
-
-            const user = await tx.user.create({
-                data: {
-                    name,
-                    email,
-                    password: hashedPassword,
-                    role: "ADMIN",
-                    tenantId: tenant.id,
-                },
-            });
-
-            return { user, tenant };
-        });
-
-        // Generate JWT
-        const token = generateToken({
-            userId: result.user.id,
-            tenantId: result.user.tenantId,
-            role: result.user.role,
-        });
-
-        return Response.json({
-            message: "Signup successful",
-            token,
-            user: {
-                id: result.user.id,
-                name: result.user.name,
-                email: result.user.email,
-                role: result.user.role,
-            },
-        });
-    } catch (error) {
-        console.error(error);
-        return Response.json(
-            { error: "Internal server error" },
-            { status: 500 }
-        );
+    if (!parsed.success) {
+      return error(parsed.error.issues[0].message, 400, "VALIDATION_ERROR");
     }
+
+    const { name, email, password, organizationName } = parsed.data;
+
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return error("An account with this email already exists", 409, "EMAIL_TAKEN");
+    }
+
+    const hashedPassword = await hashPassword(password);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({ data: { name: organizationName } });
+      const user = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: "ADMIN",
+          tenantId: tenant.id,
+        },
+      });
+      return { user, tenant };
+    });
+
+    const payload = {
+      userId: result.user.id,
+      tenantId: result.user.tenantId,
+      role: result.user.role as "ADMIN" | "MANAGER" | "EMPLOYEE",
+    };
+
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
+
+    const isProduction = process.env.NODE_ENV === "production";
+    const securePart = isProduction ? "; Secure" : "";
+
+    const headers = new Headers({ "Content-Type": "application/json" });
+    headers.append(
+      "Set-Cookie",
+      `access_token=${accessToken}; HttpOnly${securePart}; SameSite=Strict; Path=/; Max-Age=900`
+    );
+    headers.append(
+      "Set-Cookie",
+      `refresh_token=${refreshToken}; HttpOnly${securePart}; SameSite=Strict; Path=/api/auth; Max-Age=604800`
+    );
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          user: {
+            id: result.user.id,
+            name: result.user.name,
+            email: result.user.email,
+            role: result.user.role,
+          },
+        },
+      }),
+      { headers, status: 201 }
+    );
+  } catch {
+    return error("Internal server error", 500, "SERVER_ERROR");
+  }
 }
