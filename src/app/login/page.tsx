@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
-import type { AuthUser } from "@/store/authStore";
 
 export default function LoginPage() {
   const router = useRouter();
-  const setUser = useAuthStore((state) => state.setUser);
+  const initAuth = useAuthStore((state) => state.initAuth);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +28,7 @@ export default function LoginPage() {
       const json = await res.json();
 
       if (res.ok) {
-        setUser(json.data.user as AuthUser);
+        await initAuth();
         router.push("/dashboard");
       } else {
         setErrorMsg(json.error || "Login failed");
