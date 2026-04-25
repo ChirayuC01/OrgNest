@@ -6,6 +6,42 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum TaskStatus {
+  pending
+  in_progress
+  done
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum PermissionModule {
+  TASKS
+  TEAM
+  ANALYTICS
+  AUDIT
+  SETTINGS
+}
+
+enum PermissionAction {
+  read
+  write
+  delete
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
 model Tenant {
   id        String   @id @default(cuid())
   name      String
@@ -16,27 +52,63 @@ model Tenant {
 }
 
 model User {
-  id       String @id @default(cuid())
-  name     String
-  email    String @unique
-  password String
-  role     Role   @default(EMPLOYEE)
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  role         Role      @default(EMPLOYEE)
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  isActive     Boolean   @default(true)
+  inviteToken  String?   @unique
+  inviteExpiry DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  createdAt DateTime   @default(now())
-  auditLogs AuditLog[]
+  auditLogs       AuditLog[]
+  assignedTasks   Task[]           @relation("TaskAssignee")
+  permissions     UserPermission[]
+  permissionsGranted UserPermission[] @relation("PermissionGrantedBy")
+
+  @@index([tenantId])
 }
 
 model Task {
-  id       String @id @default(cuid())
-  title    String
-  status   String
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  status       TaskStatus @default(pending)
+  priority     Priority   @default(MEDIUM)
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  assignedToId String?
+  assignedUser User?      @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  dueDate      DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  assignedTo String?
-  createdAt  DateTime @default(now())
+  @@index([tenantId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([priority])
+}
+
+model UserPermission {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String
+  module      PermissionModule
+  action      PermissionAction
+  granted     Boolean
+  grantedById String
+  grantedBy   User             @relation("PermissionGrantedBy", fields: [grantedById], references: [id])
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([userId, module, action])
+  @@index([userId])
+  @@index([tenantId])
 }
 
 model AuditLog {
@@ -50,10 +122,8 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
-}
 
-enum Role {
-  ADMIN
-  MANAGER
-  EMPLOYEE
+  @@index([tenantId])
+  @@index([userId])
+  @@index([createdAt])
 }

@@ -1,8 +1,8 @@
 import { verifyToken } from "@/lib/verify";
+import type { TokenPayload } from "@/lib/auth";
 
-export async function authMiddleware(req: Request) {
+export async function authMiddleware(req: Request): Promise<TokenPayload> {
     const cookieHeader = req.headers.get("cookie");
-
     if (!cookieHeader) throw new Error("Unauthorized");
 
     const token = cookieHeader
@@ -13,12 +13,7 @@ export async function authMiddleware(req: Request) {
     if (!token) throw new Error("Unauthorized");
 
     const decoded = verifyToken(token);
+    if (!decoded) throw new Error("Unauthorized");
 
-    if (!decoded) throw new Error("Invalid token");
-
-    return decoded as {
-        userId: string;
-        tenantId: string;
-        role: string;
-    };
+    return decoded;
 }
