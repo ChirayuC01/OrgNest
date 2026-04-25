@@ -9,6 +9,8 @@ const PUBLIC_PATHS = [
   "/api/auth/signup",
   "/api/auth/refresh",
   "/api/health",
+  "/api/docs",
+  "/api-docs",
 ];
 
 export function proxy(req: NextRequest) {

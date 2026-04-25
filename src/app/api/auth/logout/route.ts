@@ -1,3 +1,13 @@
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Log out and clear session cookies
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
 import { success } from "@/helper/apiResponse";
 
 export async function POST() {

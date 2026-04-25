@@ -1,3 +1,16 @@
+/**
+ * @swagger
+ * /api/auth/refresh:
+ *   post:
+ *     summary: Refresh the access token using the refresh_token cookie
+ *     tags: [Auth]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: New access_token cookie issued
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/verify";
 import { generateAccessToken } from "@/lib/auth";

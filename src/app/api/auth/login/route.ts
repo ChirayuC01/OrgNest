@@ -1,3 +1,28 @@
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Authenticate and receive session cookies
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *     responses:
+ *       200:
+ *         description: Login successful. Sets access_token and refresh_token HttpOnly cookies.
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         description: Invalid credentials
+ */
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { comparePassword } from "@/lib/hash";

@@ -1,3 +1,30 @@
+/**
+ * @swagger
+ * /api/auth/signup:
+ *   post:
+ *     summary: Register a new organization and admin account
+ *     tags: [Auth]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password, organizationName]
+ *             properties:
+ *               name: { type: string, minLength: 2, maxLength: 100 }
+ *               email: { type: string, format: email }
+ *               password: { type: string, minLength: 8, format: password }
+ *               organizationName: { type: string, minLength: 1, maxLength: 255 }
+ *     responses:
+ *       201:
+ *         description: Signup successful. Sets access_token and refresh_token cookies.
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       409:
+ *         $ref: '#/components/responses/Conflict'
+ */
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/hash";

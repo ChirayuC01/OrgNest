@@ -1,3 +1,15 @@
+/**
+ * @swagger
+ * /api/auth/me:
+ *   get:
+ *     summary: Get the current authenticated user
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Current user details
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 import { authMiddleware } from "@/server/middleware/auth";
 import { prisma } from "@/lib/prisma";
 import { success, error } from "@/helper/apiResponse";

@@ -1,3 +1,71 @@
+/**
+ * @swagger
+ * /api/users/{userId}/permissions:
+ *   get:
+ *     summary: Get resolved permissions for a specific user (ADMIN only)
+ *     tags: [Permissions]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Resolved permission map and raw overrides
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *   put:
+ *     summary: Set a per-user permission override (ADMIN only)
+ *     tags: [Permissions]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UserPermissionOverride'
+ *     responses:
+ *       200:
+ *         description: Permission override saved
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *   delete:
+ *     summary: Remove a per-user permission override, restoring role default (ADMIN only)
+ *     tags: [Permissions]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [module, action]
+ *             properties:
+ *               module: { type: string, enum: [TASKS, USERS, AUDIT, ANALYTICS, SETTINGS] }
+ *               action: { type: string, enum: [READ, WRITE, DELETE, MANAGE] }
+ *     responses:
+ *       200:
+ *         description: Override removed
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/helper/requireAuth";

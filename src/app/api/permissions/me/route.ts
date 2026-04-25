@@ -1,3 +1,25 @@
+/**
+ * @swagger
+ * /api/permissions/me:
+ *   get:
+ *     summary: Get the current user's fully-resolved permission map
+ *     tags: [Permissions]
+ *     description: Returns a flat map of all module.action combinations resolved from role defaults and per-user overrides.
+ *     responses:
+ *       200:
+ *         description: Permission map
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   example: { "TASKS.READ": true, "USERS.WRITE": false }
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
 import { authMiddleware } from "@/server/middleware/auth";
 import { resolveUserPermissions } from "@/lib/permissions";
 import { success, error } from "@/helper/apiResponse";
