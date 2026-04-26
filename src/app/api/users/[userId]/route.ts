@@ -28,10 +28,7 @@ const patchUserSchema = z.object({
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ userId: string }> }
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
   const authResult = await requirePermission("USERS", "READ");
   if (authResult instanceof Response) return authResult;
 
@@ -73,10 +70,7 @@ export async function GET(
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ userId: string }> }
-) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ userId: string }> }) {
   const authResult = await requirePermission("USERS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
@@ -148,10 +142,7 @@ export async function PATCH(
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ userId: string }> }
-) {
+export async function DELETE(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
   const authResult = await requirePermission("USERS", "DELETE");
   if (authResult instanceof Response) return authResult;
 

@@ -4,6 +4,7 @@ import { requirePermission } from "@/helper/requireAuth";
 import { hashPassword } from "@/lib/hash";
 import { createAuditLog } from "@/lib/audit";
 import { success, paginated, error } from "@/helper/apiResponse";
+import { withLogging } from "@/lib/withLogging";
 import type { Prisma } from "@prisma/client";
 
 const userQuerySchema = z.object({
@@ -58,7 +59,7 @@ const createUserSchema = z.object({
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-export async function GET(req: Request) {
+export const GET = withLogging(async (req: Request) => {
   const authResult = await requirePermission("USERS", "READ");
   if (authResult instanceof Response) return authResult;
 
@@ -98,7 +99,7 @@ export async function GET(req: Request) {
     hasNext: p.page * p.limit < total,
     hasPrev: p.page > 1,
   });
-}
+});
 
 /**
  * @swagger
@@ -124,7 +125,7 @@ export async function GET(req: Request) {
  *       409:
  *         $ref: '#/components/responses/Conflict'
  */
-export async function POST(req: Request) {
+export const POST = withLogging(async (req: Request) => {
   const authResult = await requirePermission("USERS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
@@ -154,4 +155,4 @@ export async function POST(req: Request) {
   });
 
   return success(user, 201);
-}
+});

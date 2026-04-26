@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import AuthProvider from "@/components/AuthProvider";
 import ToasterProvider from "@/components/ToasterProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryProvider } from "@/components/QueryProvider";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -34,11 +35,18 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <TooltipProvider>
-            <ToasterProvider />
-            <AuthProvider>{children}</AuthProvider>
-          </TooltipProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            <TooltipProvider>
+              <ToasterProvider />
+              <AuthProvider>{children}</AuthProvider>
+            </TooltipProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

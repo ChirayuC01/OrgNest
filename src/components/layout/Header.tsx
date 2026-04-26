@@ -17,11 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, User, Menu } from "lucide-react";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { RefetchIndicator } from "@/components/layout/RefetchIndicator";
 
 const breadcrumbMap: Record<string, string> = {
   "/dashboard": "Tasks",
   "/dashboard/team": "Team",
   "/dashboard/audit": "Audit Logs",
+  "/dashboard/analytics": "Analytics",
+  "/dashboard/profile": "Profile",
 };
 
 function roleBadgeVariant(role: string) {
@@ -63,6 +66,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       <h1 className="font-semibold text-base flex-1">{breadcrumb}</h1>
 
       <div className="flex items-center gap-2">
+        <RefetchIndicator />
         <NotificationBell />
         <ThemeToggle />
 
@@ -93,7 +97,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>
+            <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>
               <User className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>

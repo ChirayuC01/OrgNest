@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
+import { useUsers, useCreateUser } from "@/hooks/useUsers";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,51 +39,31 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserPermissionsDialog } from "@/components/users/UserPermissionsDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { Users, MoreHorizontal, Plus, ShieldCheck, Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Users, MoreHorizontal, Plus, ShieldCheck, Loader2, AlertCircle } from "lucide-react";
+import type { UserPublic, UserRole } from "@/types";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "ADMIN" | "MANAGER" | "EMPLOYEE";
-}
-
-const roleBadge = {
-  ADMIN: "default" as const,
-  MANAGER: "secondary" as const,
-  EMPLOYEE: "outline" as const,
+const roleBadge: Record<UserRole, "default" | "secondary" | "outline"> = {
+  ADMIN: "default",
+  MANAGER: "secondary",
+  EMPLOYEE: "outline",
 };
 
 export default function TeamPage() {
-  const canAccess = useAuthStore((state) => state.canAccess);
-  const currentUser = useAuthStore((state) => state.user);
+  const canAccess = useAuthStore((s) => s.canAccess);
+  const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === "ADMIN";
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const params = new URLSearchParams({ limit: "100" });
+  const { data, isLoading } = useUsers(params);
+  const users = data?.data ?? [];
+
+  const createUser = useCreateUser();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "EMPLOYEE" });
   const [inviteError, setInviteError] = useState("");
-  const [inviting, setInviting] = useState(false);
-
-  const [permTarget, setPermTarget] = useState<User | null>(null);
-
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/users?limit=100", { credentials: "include" });
-      const json = await res.json();
-      if (res.ok) setUsers(json.data);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+  const [permTarget, setPermTarget] = useState<UserPublic | null>(null);
 
   const handleInvite = async () => {
     if (!form.name || !form.email || !form.password) {
@@ -90,26 +71,17 @@ export default function TeamPage() {
       return;
     }
     setInviteError("");
-    setInviting(true);
-    try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(form),
-      });
-      const json = await res.json();
-      if (res.ok) {
-        toast.success("User added to team");
+    createUser.mutate(form, {
+      onSuccess: () => {
         setForm({ name: "", email: "", password: "", role: "EMPLOYEE" });
         setInviteOpen(false);
-        fetchUsers();
-      } else {
-        setInviteError(json.error || "Failed to add user.");
-      }
-    } finally {
-      setInviting(false);
-    }
+      },
+      onError: (err) => {
+        setInviteError(err instanceof Error ? err.message : "Failed to add user.");
+        // suppress the default toast since we show inline error
+        toast.dismiss();
+      },
+    });
   };
 
   if (!canAccess("USERS", "READ")) {
@@ -127,7 +99,7 @@ export default function TeamPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold">Team</h2>
-          {!loading && (
+          {!isLoading && (
             <p className="text-sm text-muted-foreground mt-0.5">
               {users.length} {users.length === 1 ? "member" : "members"}
             </p>
@@ -135,8 +107,7 @@ export default function TeamPage() {
         </div>
         {isAdmin && (
           <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            Add member
+            <Plus className="mr-1.5 h-4 w-4" /> Add member
           </Button>
         )}
       </div>
@@ -152,12 +123,18 @@ export default function TeamPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-48" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-48" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-20 rounded-full" />
+                  </TableCell>
                   {isAdmin && <TableCell />}
                 </TableRow>
               ))
@@ -202,7 +179,13 @@ export default function TeamPage() {
       </div>
 
       {/* Invite dialog */}
-      <Dialog open={inviteOpen} onOpenChange={(v) => { setInviteOpen(v); if (!v) setInviteError(""); }}>
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={(v) => {
+          setInviteOpen(v);
+          if (!v) setInviteError("");
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Add team member</DialogTitle>
@@ -254,24 +237,35 @@ export default function TeamPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)} disabled={inviting}>
+            <Button
+              variant="outline"
+              onClick={() => setInviteOpen(false)}
+              disabled={createUser.isPending}
+            >
               Cancel
             </Button>
-            <Button onClick={handleInvite} disabled={inviting}>
-              {inviting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding…</> : "Add member"}
+            <Button onClick={handleInvite} disabled={createUser.isPending}>
+              {createUser.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding…
+                </>
+              ) : (
+                "Add member"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Permissions dialog */}
       {permTarget && (
         <UserPermissionsDialog
           userId={permTarget.id}
           userName={permTarget.name}
           userRole={permTarget.role}
           open={!!permTarget}
-          onOpenChange={(v) => { if (!v) setPermTarget(null); }}
+          onOpenChange={(v) => {
+            if (!v) setPermTarget(null);
+          }}
         />
       )}
     </div>

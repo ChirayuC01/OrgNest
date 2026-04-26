@@ -15,6 +15,7 @@ import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/verify";
 import { generateAccessToken } from "@/lib/auth";
 import { error } from "@/helper/apiResponse";
+import { env } from "@/lib/env";
 
 export async function POST() {
   try {
@@ -36,7 +37,7 @@ export async function POST() {
       role: decoded.role,
     });
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction = env.NODE_ENV === "production";
     const securePart = isProduction ? "; Secure" : "";
 
     const headers = new Headers({ "Content-Type": "application/json" });

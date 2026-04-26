@@ -8,8 +8,6 @@
  *       200:
  *         description: Logged out successfully
  */
-import { success } from "@/helper/apiResponse";
-
 export async function POST() {
   const headers = new Headers({ "Content-Type": "application/json" });
   headers.append("Set-Cookie", "access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");

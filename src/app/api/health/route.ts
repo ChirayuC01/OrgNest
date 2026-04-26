@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { env } from "@/lib/env";
 
 /**
  * @swagger
@@ -30,7 +31,7 @@ export async function GET() {
     return Response.json({
       status: "healthy",
       version: process.env.npm_package_version ?? "0.1.0",
-      environment: process.env.NODE_ENV ?? "development",
+      environment: env.NODE_ENV,
       dbLatencyMs: Date.now() - start,
       timestamp: new Date().toISOString(),
     });

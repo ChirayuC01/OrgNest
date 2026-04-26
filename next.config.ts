@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  compiler: {
+    // Strip all console.* calls from production bundles (server code uses pino)
+    removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false,
+  },
 };
 
 export default nextConfig;

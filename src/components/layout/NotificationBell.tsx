@@ -22,6 +22,16 @@ interface Notification {
 
 const POLL_MS = 60_000;
 
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,7 +52,9 @@ export function NotificationBell() {
   useEffect(() => {
     fetchNotifications();
     intervalRef.current = setInterval(fetchNotifications, POLL_MS);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, []);
 
   const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
@@ -54,16 +66,6 @@ export function NotificationBell() {
       setReadIds(new Set(notifications.map((n) => n.id)));
     }
   };
-
-  function timeAgo(dateStr: string) {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60_000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
-  }
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpen}>

@@ -3,13 +3,18 @@
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+// Stable no-op subscribe — we never need to notify React of external changes.
+// getServerSnapshot returns false so the component renders nothing on the server.
+const subscribe = () => () => {};
+const getSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
-  useEffect(() => setMounted(true), []);
   if (!mounted) return <Button variant="ghost" size="icon" className="w-9 h-9" />;
 
   return (

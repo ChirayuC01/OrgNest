@@ -32,11 +32,7 @@ export async function GET() {
   try {
     const user = await authMiddleware();
 
-    const permissions = await resolveUserPermissions(
-      user.userId,
-      user.role as Role,
-      user.tenantId
-    );
+    const permissions = await resolveUserPermissions(user.userId, user.role as Role, user.tenantId);
 
     return success(permissions);
   } catch {

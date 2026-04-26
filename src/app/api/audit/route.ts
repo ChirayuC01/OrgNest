@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/helper/requireAuth";
 import { paginated, error } from "@/helper/apiResponse";
+import { withLogging } from "@/lib/withLogging";
 import type { Prisma } from "@prisma/client";
 
 const auditQuerySchema = z.object({
@@ -59,7 +60,7 @@ const auditQuerySchema = z.object({
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-export async function GET(req: Request) {
+export const GET = withLogging(async (req: Request) => {
   const authResult = await requirePermission("AUDIT", "READ");
   if (authResult instanceof Response) return authResult;
 
@@ -101,4 +102,4 @@ export async function GET(req: Request) {
     hasNext: p.page * p.limit < total,
     hasPrev: p.page > 1,
   });
-}
+});

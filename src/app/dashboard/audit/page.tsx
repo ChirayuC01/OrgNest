@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
+import { useAuditLogs } from "@/hooks/useAuditLogs";
+import { useAuditFilters } from "@/hooks/useFilters";
+import { usePagination } from "@/hooks/usePagination";
 import {
   Table,
   TableBody,
@@ -22,32 +25,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ClipboardList, ChevronLeft, ChevronRight, Search, X, ShieldCheck, Download } from "lucide-react";
-import { exportToCSV, exportToPDF } from "@/lib/export";
-import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type AuditLog = {
-  id: string;
-  action: string;
-  entity: string;
-  entityId: string | null;
-  createdAt: string;
-  user: { name: string; email: string } | null;
-};
-
-interface PaginationMeta {
-  page: number;
-  totalPages: number;
-  total: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
+import {
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  X,
+  ShieldCheck,
+  Download,
+} from "lucide-react";
+import { exportToCSV, exportToPDF } from "@/lib/export";
+import { toast } from "sonner";
+import type { AuditLog } from "@/types";
 
 const actionColors: Record<string, string> = {
   CREATE: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
@@ -58,70 +53,39 @@ const actionColors: Record<string, string> = {
 
 export default function AuditPage() {
   const canAccess = useAuthStore((s) => s.canAccess);
+  const [localSearch, setLocalSearch] = useState("");
 
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [meta, setMeta] = useState<PaginationMeta | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { page, limit, setPage, reset: resetPage } = usePagination({ defaultLimit: 20 });
+  const filters = useAuditFilters(resetPage);
 
-  const [action, setAction] = useState("all");
-  const [entity, setEntity] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const params = filters.toParams(page, limit);
+  const { data, isLoading } = useAuditLogs(params);
 
-  const fetchLogs = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ page: String(page), limit: "20", sortOrder: "desc" });
-      if (action && action !== "all") params.set("action", action);
-      if (entity && entity !== "all") params.set("entity", entity);
-      if (dateFrom) params.set("dateFrom", new Date(dateFrom).toISOString());
-      if (dateTo) params.set("dateTo", new Date(dateTo + "T23:59:59").toISOString());
+  const allLogs = data?.data ?? [];
+  const meta = data?.meta ?? null;
 
-      const res = await fetch(`/api/audit?${params}`, { credentials: "include" });
-      const json = await res.json();
-      if (res.ok) {
-        setLogs(json.data);
-        setMeta(json.meta);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [page, action, entity, dateFrom, dateTo]);
+  // Client-side search filters the current page
+  const logs: AuditLog[] = localSearch
+    ? allLogs.filter(
+        (l) =>
+          l.user?.name?.toLowerCase().includes(localSearch.toLowerCase()) ||
+          l.user?.email?.toLowerCase().includes(localSearch.toLowerCase()) ||
+          l.entity.toLowerCase().includes(localSearch.toLowerCase()) ||
+          l.action.toLowerCase().includes(localSearch.toLowerCase())
+      )
+    : allLogs;
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+  const hasServerFilters =
+    filters.action !== "all" || filters.entity !== "all" || filters.dateFrom || filters.dateTo;
 
-  useEffect(() => {
-    setPage(1);
-  }, [action, entity, dateFrom, dateTo]);
-
-  const hasFilters =
-    (action && action !== "all") || (entity && entity !== "all") || dateFrom || dateTo;
-
-  const resetFilters = () => {
-    setAction("all");
-    setEntity("all");
-    setDateFrom("");
-    setDateTo("");
-    setSearch("");
-    setPage(1);
+  const resetAll = () => {
+    filters.reset();
+    setLocalSearch("");
+    resetPage();
   };
 
-  const filteredLogs = search
-    ? logs.filter(
-        (l) =>
-          l.user?.name?.toLowerCase().includes(search.toLowerCase()) ||
-          l.user?.email?.toLowerCase().includes(search.toLowerCase()) ||
-          l.entity.toLowerCase().includes(search.toLowerCase()) ||
-          l.action.toLowerCase().includes(search.toLowerCase())
-      )
-    : logs;
-
   const handleExportCSV = () => {
-    const rows = filteredLogs.map((l) => ({
+    const rows = logs.map((l) => ({
       User: l.user?.name ?? "Unknown",
       Email: l.user?.email ?? "",
       Action: l.action,
@@ -135,7 +99,7 @@ export default function AuditPage() {
 
   const handleExportPDF = async () => {
     const columns = ["User", "Email", "Action", "Entity", "Entity ID", "Time"];
-    const rows = filteredLogs.map((l) => [
+    const rows = logs.map((l) => [
       l.user?.name ?? "Unknown",
       l.user?.email ?? "",
       l.action,
@@ -143,7 +107,12 @@ export default function AuditPage() {
       l.entityId ? l.entityId.slice(0, 8) : "—",
       new Date(l.createdAt).toLocaleString(),
     ]);
-    await exportToPDF(columns, rows, "OrgNest — Audit Log Export", `orgnest-audit-${new Date().toISOString().slice(0, 10)}`);
+    await exportToPDF(
+      columns,
+      rows,
+      "OrgNest — Audit Log Export",
+      `orgnest-audit-${new Date().toISOString().slice(0, 10)}`
+    );
     toast.success("PDF exported");
   };
 
@@ -168,11 +137,10 @@ export default function AuditPage() {
             </p>
           )}
         </div>
-        {filteredLogs.length > 0 && (
+        {logs.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger className="flex items-center gap-1.5 h-8 px-3 text-sm rounded-lg border border-border hover:bg-muted transition-colors outline-none">
-              <Download className="h-3.5 w-3.5" />
-              Export
+              <Download className="h-3.5 w-3.5" /> Export
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleExportCSV}>Export CSV</DropdownMenuItem>
@@ -188,13 +156,13 @@ export default function AuditPage() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search user or entity…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             className="pl-8 h-9 w-48 text-sm"
           />
         </div>
 
-        <Select value={action || "all"} onValueChange={(v) => v && setAction(v)}>
+        <Select value={filters.action || "all"} onValueChange={(v) => v && filters.setAction(v)}>
           <SelectTrigger className="h-9 w-32 text-sm">
             <SelectValue placeholder="Action" />
           </SelectTrigger>
@@ -207,7 +175,7 @@ export default function AuditPage() {
           </SelectContent>
         </Select>
 
-        <Select value={entity || "all"} onValueChange={(v) => v && setEntity(v)}>
+        <Select value={filters.entity || "all"} onValueChange={(v) => v && filters.setEntity(v)}>
           <SelectTrigger className="h-9 w-32 text-sm">
             <SelectValue placeholder="Entity" />
           </SelectTrigger>
@@ -222,25 +190,22 @@ export default function AuditPage() {
         <div className="flex items-center gap-1.5">
           <Input
             type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            value={filters.dateFrom}
+            onChange={(e) => filters.setDateFrom(e.target.value)}
             className="h-9 w-36 text-sm"
-            placeholder="From"
           />
           <span className="text-muted-foreground text-sm">–</span>
           <Input
             type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            value={filters.dateTo}
+            onChange={(e) => filters.setDateTo(e.target.value)}
             className="h-9 w-36 text-sm"
-            placeholder="To"
           />
         </div>
 
-        {(hasFilters || search) && (
-          <Button variant="ghost" size="sm" onClick={resetFilters} className="h-9 gap-1">
-            <X className="h-3.5 w-3.5" />
-            Clear
+        {(hasServerFilters || localSearch) && (
+          <Button variant="ghost" size="sm" onClick={resetAll} className="h-9 gap-1">
+            <X className="h-3.5 w-3.5" /> Clear
           </Button>
         )}
       </div>
@@ -258,7 +223,7 @@ export default function AuditPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {isLoading ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <TableRow key={i}>
                   {Array.from({ length: 5 }).map((__, j) => (
@@ -268,7 +233,7 @@ export default function AuditPage() {
                   ))}
                 </TableRow>
               ))
-            ) : filteredLogs.length === 0 ? (
+            ) : logs.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-10">
                   <EmptyState
@@ -279,20 +244,15 @@ export default function AuditPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredLogs.map((log) => (
+              logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
-                    <div>
-                      <p className="font-medium text-sm">{log.user?.name ?? "Unknown"}</p>
-                      <p className="text-xs text-muted-foreground">{log.user?.email}</p>
-                    </div>
+                    <p className="font-medium text-sm">{log.user?.name ?? "Unknown"}</p>
+                    <p className="text-xs text-muted-foreground">{log.user?.email}</p>
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        actionColors[log.action] ??
-                        "bg-muted text-muted-foreground"
-                      }`}
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${actionColors[log.action] ?? "bg-muted text-muted-foreground"}`}
                     >
                       {log.action}
                     </span>
@@ -332,8 +292,7 @@ export default function AuditPage() {
               disabled={!meta.hasPrev}
               onClick={() => setPage((p) => p - 1)}
             >
-              <ChevronLeft className="h-4 w-4" />
-              Prev
+              <ChevronLeft className="h-4 w-4" /> Prev
             </Button>
             <Button
               variant="outline"
@@ -341,8 +300,7 @@ export default function AuditPage() {
               disabled={!meta.hasNext}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
-              <ChevronRight className="h-4 w-4" />
+              Next <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>

@@ -27,7 +27,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { comparePassword } from "@/lib/hash";
 import { generateAccessToken, generateRefreshToken } from "@/lib/auth";
-import { success, error } from "@/helper/apiResponse";
+import { error } from "@/helper/apiResponse";
+import { createAuditLog } from "@/lib/audit";
+import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -60,7 +63,7 @@ export async function POST(req: Request) {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction = env.NODE_ENV === "production";
     const securePart = isProduction ? "; Secure" : "";
 
     const headers = new Headers({ "Content-Type": "application/json" });
@@ -72,6 +75,16 @@ export async function POST(req: Request) {
       "Set-Cookie",
       `refresh_token=${refreshToken}; HttpOnly${securePart}; SameSite=Strict; Path=/api/auth; Max-Age=604800`
     );
+
+    // Fire-and-forget audit — don't block the login response
+    createAuditLog({
+      action: "LOGIN",
+      entity: "User",
+      entityId: user.id,
+      userId: user.id,
+      tenantId: user.tenantId,
+      metadata: { email: user.email },
+    });
 
     return new Response(
       JSON.stringify({
@@ -87,7 +100,8 @@ export async function POST(req: Request) {
       }),
       { headers, status: 200 }
     );
-  } catch {
+  } catch (err) {
+    logger.error({ err }, "login error");
     return error("Internal server error", 500, "SERVER_ERROR");
   }
 }

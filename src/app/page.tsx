@@ -86,8 +86,7 @@ export default function LandingPage() {
               Production-grade task management
             </div>
             <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 leading-tight">
-              Where teams get{" "}
-              <span className="text-primary">organized</span> and stay{" "}
+              Where teams get <span className="text-primary">organized</span> and stay{" "}
               <span className="text-primary">accountable</span>
             </h1>
             <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
@@ -95,10 +94,7 @@ export default function LandingPage() {
               for organizations that care about structure, visibility, and control.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="/signup"
-                className={cn(buttonVariants({ size: "lg" }), "text-base px-8")}
-              >
+              <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "text-base px-8")}>
                 Start for free <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
               <Link
@@ -118,9 +114,7 @@ export default function LandingPage() {
         <section className="py-20 px-6 bg-muted/30">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-14">
-              <h2 className="text-3xl font-bold tracking-tight mb-4">
-                Everything your team needs
-              </h2>
+              <h2 className="text-3xl font-bold tracking-tight mb-4">Everything your team needs</h2>
               <p className="text-muted-foreground text-lg max-w-xl mx-auto">
                 From task tracking to enterprise-grade access control, OrgNest has you covered.
               </p>
@@ -157,10 +151,7 @@ export default function LandingPage() {
             <p className="text-muted-foreground text-lg mb-8">
               Join teams that rely on OrgNest to stay organized, accountable, and secure.
             </p>
-            <Link
-              href="/signup"
-              className={cn(buttonVariants({ size: "lg" }), "text-base px-10")}
-            >
+            <Link href="/signup" className={cn(buttonVariants({ size: "lg" }), "text-base px-10")}>
               Create your workspace <ArrowRight className="ml-2 h-5 w-5" />
             </Link>
           </div>

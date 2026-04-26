@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
 import { TaskCard } from "@/components/tasks/TaskCard";
@@ -9,10 +9,18 @@ import { TaskSkeletonGrid } from "@/components/tasks/TaskSkeleton";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Plus, CheckSquare, ChevronLeft, ChevronRight, Download } from "lucide-react";
-import { useDebounce } from "@/hooks/useDebounce";
+import { useTasks, useUpdateTask } from "@/hooks/useTasks";
+import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
+import { useUsers } from "@/hooks/useUsers";
+import { useTaskFilters } from "@/hooks/useFilters";
+import { usePagination } from "@/hooks/usePagination";
 import { useTaskStream } from "@/hooks/useTaskStream";
 import { exportToCSV, exportToPDF } from "@/lib/export";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { taskKeys } from "@/hooks/useTasks";
+import type { Task, TaskStatus } from "@/types";
+import type { PaginatedResponse } from "@/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,130 +28,49 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface Task {
-  id: string;
-  title: string;
-  description?: string | null;
-  status: "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE";
-  priority: number;
-  dueDate?: string | null;
-  assignedTo?: { name: string; email: string } | null;
-}
-
-interface PaginationMeta {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
-
 const PRIORITY_LABEL: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High" };
 
 export default function TasksPage() {
-  const canAccess = useAuthStore((state) => state.canAccess);
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [meta, setMeta] = useState<PaginationMeta | null>(null);
-  const [loading, setLoading] = useState(true);
+  const canAccess = useAuthStore((s) => s.canAccess);
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const qc = useQueryClient();
 
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("all");
-  const [priority, setPriority] = useState("all");
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [sortOrder, setSortOrder] = useState("desc");
-  const [page, setPage] = useState(1);
+  // Pre-fetch team members for the assign dropdown in the detail dialog
+  const teamParams = new URLSearchParams({ limit: "100", sortBy: "name", sortOrder: "asc" });
+  const { data: teamData } = useUsers(teamParams);
 
-  const debouncedSearch = useDebounce(search, 300);
+  const { page, limit, setPage, reset: resetPage } = usePagination({ defaultLimit: 12 });
+  const filters = useTaskFilters(resetPage);
 
-  const fetchTasks = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: "12",
-        sortBy,
-        sortOrder,
-      });
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      if (status && status !== "all") params.set("status", status);
-      if (priority && priority !== "all") params.set("priority", priority);
+  const params = filters.toParams(page, limit);
+  const { data, isLoading } = useTasks(params);
+  const updateTask = useUpdateTask();
 
-      const res = await fetch(`/api/tasks?${params}`, { credentials: "include" });
-      const json = await res.json();
-      if (res.ok) {
-        setTasks(json.data);
-        setMeta(json.meta);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [page, sortBy, sortOrder, debouncedSearch, status, priority]);
+  const tasks = data?.data ?? [];
+  const meta = data?.meta ?? null;
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
-
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, status, priority, sortBy, sortOrder]);
-
-  // SSE: merge remote updates into current page — only refresh if on page 1 with default sort
+  // SSE: merge status updates into cached query data
   useTaskStream({
-    enabled: page === 1 && sortBy === "createdAt" && sortOrder === "desc",
+    enabled: page === 1 && filters.sortBy === "createdAt" && filters.sortOrder === "desc",
     onUpdate: (streamTasks) => {
-      setTasks((prev) => {
-        // Merge: update any tasks already on screen, keep page slice
-        const updated = prev.map((t) => {
-          const remote = streamTasks.find((s) => s.id === t.id);
-          return remote ? { ...t, status: remote.status as Task["status"], updatedAt: remote.updatedAt } : t;
-        });
-        return updated;
+      qc.setQueriesData<PaginatedResponse<Task>>({ queryKey: taskKeys.all }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((t) => {
+            const remote = streamTasks.find((s) => s.id === t.id);
+            return remote ? { ...t, status: remote.status as TaskStatus } : t;
+          }),
+        };
       });
     },
   });
 
-  const handleReset = () => {
-    setSearch("");
-    setStatus("all");
-    setPriority("all");
-    setSortBy("createdAt");
-    setSortOrder("desc");
-    setPage(1);
+  const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
+    updateTask.mutate({ id: taskId, status: newStatus });
   };
 
-  // ── Optimistic status patch ──────────────────────────────────────────────────
-  const handleStatusChange = useCallback(
-    async (taskId: string, newStatus: Task["status"]) => {
-      const previous = tasks.find((t) => t.id === taskId);
-      if (!previous) return;
-
-      // Optimistic update
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-
-      try {
-        const res = await fetch(`/api/tasks/${taskId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ status: newStatus }),
-        });
-        if (!res.ok) throw new Error("Failed");
-      } catch {
-        // Rollback
-        setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? { ...t, status: previous.status } : t))
-        );
-        toast.error("Failed to update task status");
-      }
-    },
-    [tasks]
-  );
-
-  // ── Export ───────────────────────────────────────────────────────────────────
   const handleExportCSV = () => {
     const rows = tasks.map((t) => ({
       ID: t.id,
@@ -167,7 +94,12 @@ export default function TasksPage() {
       t.assignedTo?.name ?? "—",
       t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "—",
     ]);
-    await exportToPDF(columns, rows, "OrgNest — Task Export", `orgnest-tasks-${new Date().toISOString().slice(0, 10)}`);
+    await exportToPDF(
+      columns,
+      rows,
+      "OrgNest — Task Export",
+      `orgnest-tasks-${new Date().toISOString().slice(0, 10)}`
+    );
     toast.success("PDF exported");
   };
 
@@ -207,37 +139,44 @@ export default function TasksPage() {
       </div>
 
       <TaskFilters
-        search={search}
-        status={status}
-        priority={priority}
-        sortBy={sortBy}
-        sortOrder={sortOrder}
-        onSearchChange={setSearch}
-        onStatusChange={setStatus}
-        onPriorityChange={setPriority}
-        onSortByChange={setSortBy}
-        onSortOrderChange={setSortOrder}
-        onReset={handleReset}
+        search={filters.search}
+        status={filters.status}
+        priority={filters.priority}
+        sortBy={filters.sortBy}
+        sortOrder={filters.sortOrder}
+        onSearchChange={filters.setSearch}
+        onStatusChange={filters.setStatus}
+        onPriorityChange={filters.setPriority}
+        onSortByChange={filters.setSortBy}
+        onSortOrderChange={filters.setSortOrder}
+        onReset={filters.reset}
       />
 
-      {loading ? (
+      {isLoading ? (
         <TaskSkeletonGrid />
       ) : tasks.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
           title="No tasks found"
           description={
-            search || (status && status !== "all") || (priority && priority !== "all")
+            filters.debouncedSearch || filters.status !== "all" || filters.priority !== "all"
               ? "No tasks match your filters. Try adjusting the search or clearing filters."
               : "Get started by creating your first task."
           }
-          action={canWrite ? { label: "Create task", onClick: () => setCreateOpen(true) } : undefined}
+          action={
+            canWrite ? { label: "Create task", onClick: () => setCreateOpen(true) } : undefined
+          }
         />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {tasks.map((task) => (
-              <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onStatusChange={handleStatusChange}
+                onClick={(id) => setDetailTaskId(id)}
+              />
             ))}
           </div>
 
@@ -253,8 +192,7 @@ export default function TasksPage() {
                   disabled={!meta.hasPrev}
                   onClick={() => setPage((p) => p - 1)}
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Prev
+                  <ChevronLeft className="h-4 w-4" /> Prev
                 </Button>
                 <Button
                   variant="outline"
@@ -262,8 +200,7 @@ export default function TasksPage() {
                   disabled={!meta.hasNext}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
+                  Next <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -274,7 +211,15 @@ export default function TasksPage() {
       <CreateTaskDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={fetchTasks}
+        onCreated={() => qc.invalidateQueries({ queryKey: taskKeys.all })}
+      />
+
+      <TaskDetailDialog
+        taskId={detailTaskId}
+        onOpenChange={(open) => {
+          if (!open) setDetailTaskId(null);
+        }}
+        teamMembers={teamData?.data ?? []}
       />
     </div>
   );

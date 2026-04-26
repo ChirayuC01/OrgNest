@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
+import { useAnalytics } from "@/hooks/useAnalytics";
 import { StatCard, StatCardSkeleton } from "@/components/analytics/StatCard";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,16 +24,6 @@ import {
   Legend,
 } from "recharts";
 
-interface AnalyticsData {
-  tasksByStatus: { status: string; count: number }[];
-  tasksByMember: { name: string; count: number }[];
-  tasksCreatedPerDay: { date: string; count: number }[];
-  completionRate: number;
-  totalTasks: number;
-  openTasks: number;
-  doneTasks: number;
-}
-
 const STATUS_COLORS: Record<string, string> = {
   TODO: "#94a3b8",
   IN_PROGRESS: "#3b82f6",
@@ -49,21 +39,21 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const CHART_COLORS = [
-  "#6366f1", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444",
-  "#8b5cf6", "#06b6d4", "#84cc16", "#f97316", "#ec4899",
+  "#6366f1",
+  "#3b82f6",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#ec4899",
 ];
 
 export default function AnalyticsPage() {
   const canAccess = useAuthStore((s) => s.canAccess);
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/analytics", { credentials: "include" })
-      .then((r) => r.json())
-      .then((json) => { if (json.success) setData(json.data); })
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, isLoading: loading } = useAnalytics();
 
   if (!canAccess("ANALYTICS", "READ")) {
     return (
@@ -78,7 +68,10 @@ export default function AnalyticsPage() {
   // Condense daily labels to just day/month for readability
   const trendData = (data?.tasksCreatedPerDay ?? []).map((d) => ({
     ...d,
-    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    label: new Date(d.date + "T00:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    }),
   }));
 
   // Show every 5th label to avoid crowding
@@ -172,10 +165,7 @@ export default function AnalyticsPage() {
                     dataKey="value"
                   >
                     {data?.tasksByStatus.map((entry) => (
-                      <Cell
-                        key={entry.status}
-                        fill={STATUS_COLORS[entry.status] ?? "#94a3b8"}
-                      />
+                      <Cell key={entry.status} fill={STATUS_COLORS[entry.status] ?? "#94a3b8"} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(v) => [`${v} tasks`]} />
@@ -200,7 +190,10 @@ export default function AnalyticsPage() {
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data?.tasksByMember} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <BarChart
+                  data={data?.tasksByMember}
+                  margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
+                >
                   <XAxis
                     dataKey="name"
                     tick={{ fontSize: 11 }}
@@ -230,7 +223,10 @@ export default function AnalyticsPage() {
             <Skeleton className="h-48 w-full" />
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={trendDataLabeled} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+              <LineChart
+                data={trendDataLabeled}
+                margin={{ top: 4, right: 16, left: -20, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="displayLabel" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />

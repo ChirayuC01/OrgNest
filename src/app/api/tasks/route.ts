@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/helper/requireAuth";
 import { createAuditLog } from "@/lib/audit";
 import { success, paginated, error } from "@/helper/apiResponse";
+import { withLogging } from "@/lib/withLogging";
 import type { Prisma } from "@prisma/client";
 
 const taskQuerySchema = z.object({
@@ -12,9 +13,7 @@ const taskQuerySchema = z.object({
   search: z.string().max(100).optional(),
   dueBefore: z.string().optional(),
   dueAfter: z.string().optional(),
-  sortBy: z
-    .enum(["createdAt", "updatedAt", "dueDate", "priority", "title"])
-    .default("createdAt"),
+  sortBy: z.enum(["createdAt", "updatedAt", "dueDate", "priority", "title"]).default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -86,7 +85,7 @@ const createTaskSchema = z.object({
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-export async function GET(req: Request) {
+export const GET = withLogging(async (req: Request) => {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
@@ -96,10 +95,14 @@ export async function GET(req: Request) {
 
   const p = parsed.data;
 
+  // Employees can only see tasks assigned to them
+  const isEmployee = authResult.role === "EMPLOYEE";
+
   const where: Prisma.TaskWhereInput = {
     tenantId: authResult.tenantId,
+    ...(isEmployee && { assignedToId: authResult.userId }),
     ...(p.status && { status: p.status }),
-    ...(p.assignedToId && { assignedToId: p.assignedToId }),
+    ...(!isEmployee && p.assignedToId && { assignedToId: p.assignedToId }),
     ...(p.priority && { priority: p.priority }),
     ...(p.search && {
       OR: [
@@ -134,7 +137,7 @@ export async function GET(req: Request) {
     hasNext: p.page * p.limit < total,
     hasPrev: p.page > 1,
   });
-}
+});
 
 /**
  * @swagger
@@ -158,7 +161,7 @@ export async function GET(req: Request) {
  *       403:
  *         $ref: '#/components/responses/Forbidden'
  */
-export async function POST(req: Request) {
+export const POST = withLogging(async (req: Request) => {
   const authResult = await requirePermission("TASKS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
@@ -200,4 +203,4 @@ export async function POST(req: Request) {
   });
 
   return success(task, 201);
-}
+});

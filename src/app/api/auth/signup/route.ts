@@ -30,18 +30,14 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/hash";
 import { generateAccessToken, generateRefreshToken } from "@/lib/auth";
 import { error } from "@/helper/apiResponse";
+import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   email: z.string().email("Invalid email address"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .max(100),
-  organizationName: z
-    .string()
-    .min(1, "Organization name is required")
-    .max(255),
+  password: z.string().min(8, "Password must be at least 8 characters").max(100),
+  organizationName: z.string().min(1, "Organization name is required").max(255),
 });
 
 export async function POST(req: Request) {
@@ -85,7 +81,7 @@ export async function POST(req: Request) {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction = env.NODE_ENV === "production";
     const securePart = isProduction ? "; Secure" : "";
 
     const headers = new Headers({ "Content-Type": "application/json" });
@@ -112,7 +108,8 @@ export async function POST(req: Request) {
       }),
       { headers, status: 201 }
     );
-  } catch {
+  } catch (err) {
+    logger.error({ err }, "signup error");
     return error("Internal server error", 500, "SERVER_ERROR");
   }
 }

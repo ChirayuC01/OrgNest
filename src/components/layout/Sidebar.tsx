@@ -4,18 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  Users,
-  ClipboardList,
-  BarChart3,
-  Zap,
-} from "lucide-react";
+import { LayoutDashboard, Users, ClipboardList, BarChart3, Zap } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Tasks", icon: LayoutDashboard, module: "TASKS" as const },
   { href: "/dashboard/team", label: "Team", icon: Users, module: "USERS" as const },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, module: "ANALYTICS" as const },
+  {
+    href: "/dashboard/analytics",
+    label: "Analytics",
+    icon: BarChart3,
+    module: "ANALYTICS" as const,
+  },
   { href: "/dashboard/audit", label: "Audit Logs", icon: ClipboardList, module: "AUDIT" as const },
 ];
 
@@ -34,9 +33,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </div>
           <span className="font-bold text-base tracking-tight">OrgNest</span>
         </div>
-        {user && (
-          <p className="mt-2 text-xs text-muted-foreground truncate">{user.email}</p>
-        )}
+        {user && <p className="mt-2 text-xs text-muted-foreground truncate">{user.email}</p>}
       </div>
 
       {/* Nav */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, startTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +51,7 @@ export function UserPermissionsDialog({
 
   useEffect(() => {
     if (!open) return;
-    setLoading(true);
+    startTransition(() => setLoading(true));
     fetch(`/api/users/${userId}/permissions`, { credentials: "include" })
       .then((r) => r.json())
       .then((json) => {
@@ -66,8 +66,7 @@ export function UserPermissionsDialog({
   const isOverridden = (module: Module, action: Action) =>
     overrides.some((o) => o.module === module && o.action === action);
 
-  const getGranted = (module: Module, action: Action) =>
-    resolved[`${module}.${action}`] ?? false;
+  const getGranted = (module: Module, action: Action) => resolved[`${module}.${action}`] ?? false;
 
   const handleToggle = async (module: Module, action: Action, newGranted: boolean) => {
     const key = `${module}.${action}`;
@@ -124,7 +123,10 @@ export function UserPermissionsDialog({
                     Module
                   </th>
                   {ACTIONS.map((action) => (
-                    <th key={action} className="text-center py-2 px-3 font-medium text-muted-foreground">
+                    <th
+                      key={action}
+                      className="text-center py-2 px-3 font-medium text-muted-foreground"
+                    >
                       {action}
                     </th>
                   ))}
