@@ -11,29 +11,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Zap, AlertCircle, Loader2 } from "lucide-react";
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter();
   const initAuth = useAuthStore((state) => state.initAuth);
 
+  const [orgName, setOrgName] = useState("");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMsg("Please enter your email and password.");
+  const handleSignup = async () => {
+    if (!orgName || !name || !email || !password) {
+      setErrorMsg("All fields are required.");
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters.");
       return;
     }
     setErrorMsg("");
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ orgName, name, email, password }),
       });
 
       const json = await res.json();
@@ -42,7 +48,7 @@ export default function LoginPage() {
         await initAuth();
         router.push("/dashboard");
       } else {
-        setErrorMsg(json.error || "Login failed. Please check your credentials.");
+        setErrorMsg(json.error || "Signup failed. Please try again.");
       }
     } catch {
       setErrorMsg("Network error. Please try again.");
@@ -62,8 +68,8 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>Sign in to your organization workspace</CardDescription>
+          <CardTitle className="text-2xl">Create your workspace</CardTitle>
+          <CardDescription>Start organizing your team in minutes</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {errorMsg && (
@@ -74,6 +80,26 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-2">
+            <Label htmlFor="orgName">Organization name</Label>
+            <Input
+              id="orgName"
+              placeholder="Acme Corp"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="name">Your name</Label>
+            <Input
+              id="name"
+              placeholder="Jane Smith"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
@@ -81,7 +107,6 @@ export default function LoginPage() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
               autoComplete="email"
             />
           </div>
@@ -91,29 +116,29 @@ export default function LoginPage() {
             <Input
               id="password"
               type="password"
-              placeholder="••••••••"
+              placeholder="Min. 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              autoComplete="current-password"
+              onKeyDown={(e) => e.key === "Enter" && handleSignup()}
+              autoComplete="new-password"
             />
           </div>
 
-          <Button className="w-full" onClick={handleLogin} disabled={loading}>
+          <Button className="w-full" onClick={handleSignup} disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Signing in…
+                Creating workspace…
               </>
             ) : (
-              "Sign in"
+              "Create workspace"
             )}
           </Button>
 
           <p className="text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" className="text-primary font-medium hover:underline">
-              Create one
+            Already have an account?{" "}
+            <Link href="/login" className="text-primary font-medium hover:underline">
+              Sign in
             </Link>
           </p>
         </CardContent>

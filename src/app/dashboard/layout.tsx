@@ -1,45 +1,32 @@
 "use client";
 
-import Link from "next/link";
-import { useAuthStore } from "@/store/authStore";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { Header } from "@/components/layout/Header";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push("/login");
-  };
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-60 bg-black text-white p-4 space-y-4">
-        <h2 className="text-xl font-bold">OrgNest</h2>
-
-        <nav className="flex flex-col gap-2">
-          <Link href="/dashboard">Dashboard</Link>
-          <Link href="/dashboard/team">Team</Link>
-          <Link href="/dashboard/audit">Audit Logs</Link>
-        </nav>
-
-        <div className="mt-auto pt-4 border-t border-gray-700">
-          <p className="text-sm">{user?.name}</p>
-          <button onClick={handleLogout} className="mt-2 text-red-400 text-sm">
-            Logout
-          </button>
-        </div>
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-56 flex-col border-r border-border/60 bg-sidebar shrink-0">
+        <Sidebar />
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-6 bg-gray-50">{children}</main>
+      {/* Mobile sidebar drawer */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side="left" className="w-56 p-0 bg-sidebar border-r border-border/60">
+          <Sidebar onNavigate={() => setMobileOpen(false)} />
+        </SheetContent>
+      </Sheet>
+
+      {/* Content */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        <Header onMenuClick={() => setMobileOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      </div>
     </div>
   );
 }
