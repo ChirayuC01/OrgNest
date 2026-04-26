@@ -79,8 +79,8 @@ export async function GET() {
 
   // Resolve assignee names
   const assigneeIds = memberGroups
-    .map((g) => g.assignedToId)
-    .filter((id): id is string => id !== null);
+    .map((g: any) => g.assignedToId)
+    .filter((id: any): id is string => id !== null);
 
   const assignees = await prisma.user.findMany({
     where: { id: { in: assigneeIds } },
