@@ -86,7 +86,7 @@ export async function GET() {
     where: { id: { in: assigneeIds } },
     select: { id: true, name: true },
   });
-  const assigneeMap = Object.fromEntries(assignees.map((u) => [u.id, u.name]));
+  const assigneeMap = Object.fromEntries(assignees.map((u: any) => [u.id, u.name]));
 
   // Build daily trend (bucket by date string)
   const dailyMap: Record<string, number> = {};
