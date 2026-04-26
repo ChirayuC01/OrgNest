@@ -8,12 +8,14 @@ import {
   LayoutDashboard,
   Users,
   ClipboardList,
+  BarChart3,
   Zap,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Tasks", icon: LayoutDashboard, module: "TASKS" as const },
   { href: "/dashboard/team", label: "Team", icon: Users, module: "USERS" as const },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3, module: "ANALYTICS" as const },
   { href: "/dashboard/audit", label: "Audit Logs", icon: ClipboardList, module: "AUDIT" as const },
 ];
 

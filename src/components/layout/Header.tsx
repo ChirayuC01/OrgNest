@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LogOut, User, Menu } from "lucide-react";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 const breadcrumbMap: Record<string, string> = {
   "/dashboard": "Tasks",
@@ -62,6 +63,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       <h1 className="font-semibold text-base flex-1">{breadcrumb}</h1>
 
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <ThemeToggle />
 
         <DropdownMenu>

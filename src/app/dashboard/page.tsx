@@ -8,8 +8,17 @@ import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskSkeletonGrid } from "@/components/tasks/TaskSkeleton";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { EmptyState } from "@/components/common/EmptyState";
-import { Plus, CheckSquare, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, CheckSquare, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useTaskStream } from "@/hooks/useTaskStream";
+import { exportToCSV, exportToPDF } from "@/lib/export";
+import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Task {
   id: string;
@@ -29,6 +38,8 @@ interface PaginationMeta {
   hasNext: boolean;
   hasPrev: boolean;
 }
+
+const PRIORITY_LABEL: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High" };
 
 export default function TasksPage() {
   const canAccess = useAuthStore((state) => state.canAccess);
@@ -80,6 +91,21 @@ export default function TasksPage() {
     setPage(1);
   }, [debouncedSearch, status, priority, sortBy, sortOrder]);
 
+  // SSE: merge remote updates into current page — only refresh if on page 1 with default sort
+  useTaskStream({
+    enabled: page === 1 && sortBy === "createdAt" && sortOrder === "desc",
+    onUpdate: (streamTasks) => {
+      setTasks((prev) => {
+        // Merge: update any tasks already on screen, keep page slice
+        const updated = prev.map((t) => {
+          const remote = streamTasks.find((s) => s.id === t.id);
+          return remote ? { ...t, status: remote.status as Task["status"], updatedAt: remote.updatedAt } : t;
+        });
+        return updated;
+      });
+    },
+  });
+
   const handleReset = () => {
     setSearch("");
     setStatus("all");
@@ -87,6 +113,62 @@ export default function TasksPage() {
     setSortBy("createdAt");
     setSortOrder("desc");
     setPage(1);
+  };
+
+  // ── Optimistic status patch ──────────────────────────────────────────────────
+  const handleStatusChange = useCallback(
+    async (taskId: string, newStatus: Task["status"]) => {
+      const previous = tasks.find((t) => t.id === taskId);
+      if (!previous) return;
+
+      // Optimistic update
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
+
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) throw new Error("Failed");
+      } catch {
+        // Rollback
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, status: previous.status } : t))
+        );
+        toast.error("Failed to update task status");
+      }
+    },
+    [tasks]
+  );
+
+  // ── Export ───────────────────────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    const rows = tasks.map((t) => ({
+      ID: t.id,
+      Title: t.title,
+      Status: t.status,
+      Priority: PRIORITY_LABEL[t.priority] ?? t.priority,
+      "Assigned To": t.assignedTo?.name ?? "",
+      "Due Date": t.dueDate ?? "",
+    }));
+    exportToCSV(rows, `orgnest-tasks-${new Date().toISOString().slice(0, 10)}`);
+    toast.success("CSV exported");
+  };
+
+  const handleExportPDF = async () => {
+    const columns = ["ID", "Title", "Status", "Priority", "Assigned To", "Due Date"];
+    const rows = tasks.map((t) => [
+      t.id.slice(0, 8),
+      t.title,
+      t.status,
+      PRIORITY_LABEL[t.priority] ?? String(t.priority),
+      t.assignedTo?.name ?? "—",
+      t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "—",
+    ]);
+    await exportToPDF(columns, rows, "OrgNest — Task Export", `orgnest-tasks-${new Date().toISOString().slice(0, 10)}`);
+    toast.success("PDF exported");
   };
 
   const canWrite = canAccess("TASKS", "WRITE");
@@ -102,12 +184,26 @@ export default function TasksPage() {
             </p>
           )}
         </div>
-        {canWrite && (
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="mr-1.5 h-4 w-4" />
-            New task
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {tasks.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1.5 h-8 px-3 text-sm rounded-lg border border-border hover:bg-muted transition-colors outline-none">
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportCSV}>Export CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>Export PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {canWrite && (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="mr-1.5 h-4 w-4" />
+              New task
+            </Button>
+          )}
+        </div>
       </div>
 
       <TaskFilters
@@ -141,7 +237,7 @@ export default function TasksPage() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {tasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
+              <TaskCard key={task.id} task={task} onStatusChange={handleStatusChange} />
             ))}
           </div>
 

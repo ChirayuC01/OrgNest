@@ -22,7 +22,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ClipboardList, ChevronLeft, ChevronRight, Search, X, ShieldCheck } from "lucide-react";
+import { ClipboardList, ChevronLeft, ChevronRight, Search, X, ShieldCheck, Download } from "lucide-react";
+import { exportToCSV, exportToPDF } from "@/lib/export";
+import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type AuditLog = {
   id: string;
@@ -112,6 +120,33 @@ export default function AuditPage() {
       )
     : logs;
 
+  const handleExportCSV = () => {
+    const rows = filteredLogs.map((l) => ({
+      User: l.user?.name ?? "Unknown",
+      Email: l.user?.email ?? "",
+      Action: l.action,
+      Entity: l.entity,
+      "Entity ID": l.entityId ?? "",
+      Time: new Date(l.createdAt).toLocaleString(),
+    }));
+    exportToCSV(rows, `orgnest-audit-${new Date().toISOString().slice(0, 10)}`);
+    toast.success("CSV exported");
+  };
+
+  const handleExportPDF = async () => {
+    const columns = ["User", "Email", "Action", "Entity", "Entity ID", "Time"];
+    const rows = filteredLogs.map((l) => [
+      l.user?.name ?? "Unknown",
+      l.user?.email ?? "",
+      l.action,
+      l.entity,
+      l.entityId ? l.entityId.slice(0, 8) : "—",
+      new Date(l.createdAt).toLocaleString(),
+    ]);
+    await exportToPDF(columns, rows, "OrgNest — Audit Log Export", `orgnest-audit-${new Date().toISOString().slice(0, 10)}`);
+    toast.success("PDF exported");
+  };
+
   if (!canAccess("AUDIT", "READ")) {
     return (
       <EmptyState
@@ -124,12 +159,26 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold">Audit Logs</h2>
-        {meta && (
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {meta.total} {meta.total === 1 ? "entry" : "entries"}
-          </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">Audit Logs</h2>
+          {meta && (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {meta.total} {meta.total === 1 ? "entry" : "entries"}
+            </p>
+          )}
+        </div>
+        {filteredLogs.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1.5 h-8 px-3 text-sm rounded-lg border border-border hover:bg-muted transition-colors outline-none">
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportCSV}>Export CSV</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPDF}>Export PDF</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
