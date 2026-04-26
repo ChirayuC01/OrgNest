@@ -106,12 +106,12 @@ export async function GET() {
     count,
   }));
 
-  const tasksByStatus = statusGroups.map((g) => ({
+  const tasksByStatus = statusGroups.map((g: any) => ({
     status: g.status,
     count: g._count.id,
   }));
 
-  const tasksByMember = memberGroups.map((g) => ({
+  const tasksByMember = memberGroups.map((g: any) => ({
     name: assigneeMap[g.assignedToId!] ?? "Unknown",
     count: g._count.id,
   }));
