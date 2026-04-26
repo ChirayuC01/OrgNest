@@ -66,6 +66,7 @@ interface UpdateTaskInput {
   priority?: number;
   dueDate?: string | null;
   assignedToId?: string | null;
+  labelIds?: string[];
 }
 
 export function useUpdateTask() {
@@ -75,27 +76,31 @@ export function useUpdateTask() {
     onMutate: async ({ id, status }) => {
       if (!status) return;
       // Cancel in-flight refetches to avoid overwriting optimistic update
-      await qc.cancelQueries({ queryKey: taskKeys.all });
-      // Snapshot all task list caches
-      const snapshots = qc.getQueriesData<PaginatedResponse<Task>>({ queryKey: taskKeys.all });
-      // Optimistic update across all list caches
-      qc.setQueriesData<PaginatedResponse<Task>>({ queryKey: taskKeys.all }, (old) => {
-        if (!old) return old;
-        return {
+      await qc.cancelQueries({ queryKey: taskKeys.list("") });
+      // Snapshot all paginated list caches only (not detail queries which return a single Task)
+      const snapshots = qc.getQueriesData<PaginatedResponse<Task>>({
+        queryKey: taskKeys.all,
+        // Only match list queries — detail queries have a different shape
+        predicate: (q) => q.queryKey[1] === "list",
+      });
+      // Optimistic update across list caches only
+      for (const [key, old] of snapshots) {
+        if (!old?.data || !Array.isArray(old.data)) continue;
+        qc.setQueryData<PaginatedResponse<Task>>(key, {
           ...old,
           data: old.data.map((t) => (t.id === id ? { ...t, status } : t)),
-        };
-      });
+        });
+      }
       return { snapshots };
     },
     onError: (_err, _vars, ctx) => {
-      // Rollback on failure
+      // Rollback list caches on failure
       if (ctx?.snapshots) {
         for (const [key, data] of ctx.snapshots) {
           qc.setQueryData(key, data);
         }
       }
-      toast.error("Failed to update task");
+      // Don't show default toast here — callers pass their own onError
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: taskKeys.all });

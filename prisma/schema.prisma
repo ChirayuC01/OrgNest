@@ -36,6 +36,13 @@ enum PermissionAction {
   MANAGE
 }
 
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_STATUS_CHANGED
+  TASK_COMMENT_ADDED
+  TASK_DUE_SOON
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model Tenant {
@@ -43,41 +50,50 @@ model Tenant {
   name      String
   createdAt DateTime @default(now())
 
-  users User[]
-  tasks Task[]
+  users         User[]
+  tasks         Task[]
+  notifications Notification[]
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(EMPLOYEE)
-  tenantId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(cuid())
+  name       String
+  email      String    @unique
+  password   String
+  role       Role      @default(EMPLOYEE)
+  tenantId   String
+  isBanned   Boolean   @default(false)
+  bannedAt   DateTime?
+  bannedById String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  tenant        Tenant           @relation(fields: [tenantId], references: [id])
-  auditLogs     AuditLog[]
-  assignedTasks Task[]           @relation("AssignedTasks")
-  permissions   UserPermission[]
-  taskHistory   TaskHistory[]    @relation("TaskHistoryUser")
-  taskComments  TaskComment[]    @relation("TaskCommentUser")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  bannedBy        User?            @relation("BannedByUser", fields: [bannedById], references: [id])
+  bannedUsers     User[]           @relation("BannedByUser")
+  auditLogs       AuditLog[]
+  assignedTasks   Task[]           @relation("AssignedTasks")
+  createdTasks    Task[]           @relation("CreatedTasks")
+  assignedByTasks Task[]           @relation("AssignedByTasks")
+  permissions     UserPermission[]
+  taskHistory     TaskHistory[]    @relation("TaskHistoryUser")
+  taskComments    TaskComment[]    @relation("TaskCommentUser")
+  notifications   Notification[]
 
   @@index([tenantId])
   @@index([email])
 }
 
 model UserPermission {
-  id       String           @id @default(cuid())
-  userId   String
-  module   AppModule
-  action   PermissionAction
+  id        String           @id @default(cuid())
+  userId    String
+  module    AppModule
+  action    PermissionAction
   // true = explicitly granted, false = explicitly denied (overrides role default)
-  granted  Boolean
-  tenantId String
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  granted   Boolean
+  tenantId  String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -94,20 +110,62 @@ model Task {
   priority     Int        @default(2) // 1=low, 2=medium, 3=high
   tenantId     String
   assignedToId String?
+  assignedById String?
+  createdById  String
   dueDate      DateTime?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   tenant     Tenant        @relation(fields: [tenantId], references: [id])
   assignedTo User?         @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  assignedBy User?         @relation("AssignedByTasks", fields: [assignedById], references: [id])
+  createdBy  User          @relation("CreatedTasks", fields: [createdById], references: [id])
   history    TaskHistory[]
   comments   TaskComment[]
+  labels     TaskLabel[]
+  subtasks   Subtask[]
 
   @@index([tenantId])
   @@index([assignedToId])
+  @@index([createdById])
   @@index([status])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
+}
+
+model Label {
+  id       String      @id @default(cuid())
+  name     String
+  color    String      @default("#6366f1")
+  tenantId String
+  tasks    TaskLabel[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+}
+
+model Subtask {
+  id          String   @id @default(cuid())
+  taskId      String
+  title       String
+  completed   Boolean  @default(false)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
 }
 
 model TaskHistory {
@@ -136,6 +194,25 @@ model TaskComment {
   user User @relation("TaskCommentUser", fields: [userId], references: [id])
 
   @@index([taskId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  tenantId  String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  taskId    String?
+  createdAt DateTime         @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([userId])
+  @@index([userId, read])
+  @@index([tenantId])
 }
 
 model AuditLog {

@@ -2,67 +2,66 @@
  * @swagger
  * /api/notifications:
  *   get:
- *     summary: Get recent task activity as notifications
+ *     summary: Get current user's persistent notifications
  *     tags: [Notifications]
  *     security:
  *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: unreadOnly
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 20 }
  *     responses:
  *       200:
- *         description: List of recent task activity items
+ *         description: Notifications and unread count
  */
-import { authMiddleware } from "@/server/middleware/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { authMiddleware } from "@/server/middleware/auth";
 import { success, error } from "@/helper/apiResponse";
+import { withLogging } from "@/lib/withLogging";
 
-const TASK_ACTIONS = ["CREATE_TASK", "UPDATE_TASK", "DELETE_TASK", "STATUS_CHANGE"];
+const querySchema = z.object({
+  unreadOnly: z
+    .string()
+    .optional()
+    .transform((v) => v === "true"),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
 
-const ACTION_LABEL: Record<string, string> = {
-  CREATE_TASK: "created a task",
-  UPDATE_TASK: "updated a task",
-  DELETE_TASK: "deleted a task",
-  STATUS_CHANGE: "changed task status",
-};
-
-export async function GET() {
+export const GET = withLogging(async (req: Request) => {
   try {
-    const user = await authMiddleware();
+    const auth = await authMiddleware();
+    const { searchParams } = new URL(req.url);
+    const parsed = querySchema.safeParse(Object.fromEntries(searchParams));
+    if (!parsed.success) return error(parsed.error.issues[0].message, 400, "VALIDATION_ERROR");
 
-    const logs = await prisma.auditLog.findMany({
-      where: {
-        tenantId: user.tenantId,
-        action: { in: TASK_ACTIONS },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      select: {
-        id: true,
-        action: true,
-        entity: true,
-        metadata: true,
-        createdAt: true,
-        user: { select: { name: true } },
-      },
-    });
+    const { unreadOnly, limit } = parsed.data;
 
-    const notifications = logs.map((l) => {
-      const meta = l.metadata as Record<string, unknown> | null;
-      const taskTitle =
-        typeof meta?.title === "string"
-          ? ` "${meta.title}"`
-          : typeof meta?.changes === "object" && meta.changes !== null
-            ? ""
-            : "";
-      const verb = ACTION_LABEL[l.action] ?? l.action.toLowerCase().replace(/_/g, " ");
-      return {
-        id: l.id,
-        message: `${l.user?.name ?? "Someone"} ${verb}${taskTitle}`,
-        createdAt: l.createdAt,
-        read: false,
-      };
-    });
+    const [notifications, unreadCount] = await prisma.$transaction([
+      prisma.notification.findMany({
+        where: {
+          userId: auth.userId,
+          ...(unreadOnly && { read: false }),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+      prisma.notification.count({
+        where: { userId: auth.userId, read: false },
+      }),
+    ]);
 
-    return success(notifications);
-  } catch {
-    return error("Unauthorized", 401, "UNAUTHORIZED");
+    return success({ notifications, unreadCount });
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.message === "Unauthorized" || err.message === "Account suspended")
+    ) {
+      return error(err.message, 401, "UNAUTHORIZED");
+    }
+    return error("Internal server error", 500, "SERVER_ERROR");
   }
-}
+});

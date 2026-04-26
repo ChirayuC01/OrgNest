@@ -2,6 +2,11 @@ export type TaskStatus = "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE";
 export type UserRole = "ADMIN" | "MANAGER" | "EMPLOYEE";
 export type AppModule = "TASKS" | "USERS" | "AUDIT" | "ANALYTICS" | "SETTINGS";
 export type PermissionAction = "READ" | "WRITE" | "DELETE" | "MANAGE";
+export type NotificationType =
+  | "TASK_ASSIGNED"
+  | "TASK_STATUS_CHANGED"
+  | "TASK_COMMENT_ADDED"
+  | "TASK_DUE_SOON";
 
 export interface UserPublic {
   id: string;
@@ -9,6 +14,8 @@ export interface UserPublic {
   email: string;
   role: UserRole;
   tenantId: string;
+  isBanned: boolean;
+  bannedAt: string | null;
   createdAt: string;
 }
 
@@ -40,7 +47,24 @@ export interface TaskComment {
   content: string;
   createdAt: string;
   updatedAt: string;
-  user: { name: string; email: string };
+  user: { id: string; name: string; email: string };
+}
+
+export interface Label {
+  id: string;
+  name: string;
+  color: string;
+  tenantId: string;
+}
+
+export interface Subtask {
+  id: string;
+  taskId: string;
+  title: string;
+  completed: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Task {
@@ -51,10 +75,16 @@ export interface Task {
   priority: number;
   dueDate: string | null;
   assignedToId: string | null;
+  assignedById: string | null;
+  createdById: string;
   assignedTo: TaskAssignee | null;
+  assignedBy: TaskAssignee | null;
+  createdBy: TaskAssignee;
   tenantId: string;
   createdAt: string;
   updatedAt: string;
+  labels: { label: Label }[];
+  subtasks: Subtask[];
   // Populated when fetching a single task
   history?: TaskHistory[];
   comments?: TaskComment[];
@@ -93,7 +123,12 @@ export interface AnalyticsData {
 
 export interface Notification {
   id: string;
+  userId: string;
+  tenantId: string;
+  type: NotificationType;
+  title: string;
   message: string;
-  createdAt: string;
   read: boolean;
+  taskId: string | null;
+  createdAt: string;
 }

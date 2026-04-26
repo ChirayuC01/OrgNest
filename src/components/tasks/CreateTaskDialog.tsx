@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -20,7 +21,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, UserCheck } from "lucide-react";
+import { useAuthStore } from "@/store/authStore";
+import { useUsers } from "@/hooks/useUsers";
+import type { UserPublic } from "@/types";
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -29,18 +42,34 @@ interface CreateTaskDialogProps {
 }
 
 export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDialogProps) {
+  const user = useAuthStore((s) => s.user);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("2");
   const [dueDate, setDueDate] = useState("");
+  const [assignedToId, setAssignedToId] = useState<string>("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Fetch team members for assignee dropdown
+  const teamParams = new URLSearchParams({ limit: "100", sortBy: "name", sortOrder: "asc" });
+  const { data: teamData } = useUsers(teamParams);
+  const teamMembers: UserPublic[] = teamData?.data ?? [];
+
+  const filteredTeam = teamMembers.filter(
+    (m) =>
+      m.name.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+      m.email.toLowerCase().includes(assigneeSearch.toLowerCase())
+  );
 
   const reset = () => {
     setTitle("");
     setDescription("");
     setPriority("2");
     setDueDate("");
+    setAssignedToId("");
+    setAssigneeSearch("");
     setError("");
   };
 
@@ -62,6 +91,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
           description: description.trim() || undefined,
           priority: Number(priority),
           dueDate: dueDate || undefined,
+          assignedToId: assignedToId || undefined,
         }),
       });
 
@@ -148,6 +178,51 @@ export function CreateTaskDialog({ open, onOpenChange, onCreated }: CreateTaskDi
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* Assignee */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Assign to (optional)</Label>
+              {user && assignedToId !== user.userId && (
+                <button
+                  type="button"
+                  onClick={() => setAssignedToId(user.userId)}
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <UserCheck className="h-3 w-3" />
+                  Assign to me
+                </button>
+              )}
+            </div>
+            <Input
+              placeholder="Search members…"
+              value={assigneeSearch}
+              onChange={(e) => setAssigneeSearch(e.target.value)}
+              className="h-8 text-sm"
+            />
+            <Select
+              value={assignedToId || "unassigned"}
+              onValueChange={(v) => setAssignedToId(!v || v === "unassigned" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Unassigned" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {filteredTeam.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-5 w-5">
+                        <AvatarFallback className="text-[9px]">{initials(m.name)}</AvatarFallback>
+                      </Avatar>
+                      <span>{m.name}</span>
+                      <span className="text-muted-foreground text-xs">{m.email}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

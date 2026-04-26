@@ -7,8 +7,20 @@ import { TaskCard } from "@/components/tasks/TaskCard";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskSkeletonGrid } from "@/components/tasks/TaskSkeleton";
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
+import { KanbanBoard } from "@/components/tasks/KanbanBoard";
+import { LabelsManager } from "@/components/tasks/LabelsManager";
+import { DashboardWidgets } from "@/components/dashboard/DashboardWidgets";
 import { EmptyState } from "@/components/common/EmptyState";
-import { Plus, CheckSquare, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import {
+  Plus,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  LayoutGrid,
+  Kanban,
+  Tag,
+} from "lucide-react";
 import { useTasks, useUpdateTask } from "@/hooks/useTasks";
 import { TaskDetailDialog } from "@/components/tasks/TaskDetailDialog";
 import { useUsers } from "@/hooks/useUsers";
@@ -30,10 +42,14 @@ import {
 
 const PRIORITY_LABEL: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High" };
 
+type ViewMode = "grid" | "kanban";
+
 export default function TasksPage() {
   const canAccess = useAuthStore((s) => s.canAccess);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [labelsOpen, setLabelsOpen] = useState(false);
   const qc = useQueryClient();
 
   // Pre-fetch team members for the assign dropdown in the detail dialog
@@ -43,7 +59,13 @@ export default function TasksPage() {
   const { page, limit, setPage, reset: resetPage } = usePagination({ defaultLimit: 12 });
   const filters = useTaskFilters(resetPage);
 
-  const params = filters.toParams(page, limit);
+  // In Kanban mode, load all tasks (no pagination needed for reasonable task counts)
+  const kanbanParams = new URLSearchParams({
+    limit: "200",
+    sortBy: "createdAt",
+    sortOrder: "desc",
+  });
+  const params = viewMode === "kanban" ? kanbanParams : filters.toParams(page, limit);
   const { data, isLoading } = useTasks(params);
   const updateTask = useUpdateTask();
 
@@ -52,7 +74,7 @@ export default function TasksPage() {
 
   // SSE: merge status updates into cached query data
   useTaskStream({
-    enabled: page === 1 && filters.sortBy === "createdAt" && filters.sortOrder === "desc",
+    enabled: true,
     onUpdate: (streamTasks) => {
       qc.setQueriesData<PaginatedResponse<Task>>({ queryKey: taskKeys.all }, (old) => {
         if (!old) return old;
@@ -68,7 +90,14 @@ export default function TasksPage() {
   });
 
   const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
-    updateTask.mutate({ id: taskId, status: newStatus });
+    updateTask.mutate(
+      { id: taskId, status: newStatus },
+      {
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Cannot make that status change");
+        },
+      }
+    );
   };
 
   const handleExportCSV = () => {
@@ -107,16 +136,46 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-5">
+      {/* Dashboard widgets */}
+      <DashboardWidgets onTaskClick={(id) => setDetailTaskId(id)} />
+
+      {/* Page header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-semibold">Tasks</h2>
-          {meta && (
+          {meta && viewMode === "grid" && (
             <p className="text-sm text-muted-foreground mt-0.5">
               {meta.total} {meta.total === 1 ? "task" : "tasks"}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center border rounded-lg p-0.5 gap-0.5">
+            <Button
+              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setViewMode("grid")}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant={viewMode === "kanban" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setViewMode("kanban")}
+            >
+              <Kanban className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {canWrite && (
+            <Button variant="outline" size="sm" className="h-8" onClick={() => setLabelsOpen(true)}>
+              <Tag className="h-3.5 w-3.5 mr-1.5" />
+              Labels
+            </Button>
+          )}
           {tasks.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger className="flex items-center gap-1.5 h-8 px-3 text-sm rounded-lg border border-border hover:bg-muted transition-colors outline-none">
@@ -138,22 +197,32 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <TaskFilters
-        search={filters.search}
-        status={filters.status}
-        priority={filters.priority}
-        sortBy={filters.sortBy}
-        sortOrder={filters.sortOrder}
-        onSearchChange={filters.setSearch}
-        onStatusChange={filters.setStatus}
-        onPriorityChange={filters.setPriority}
-        onSortByChange={filters.setSortBy}
-        onSortOrderChange={filters.setSortOrder}
-        onReset={filters.reset}
-      />
+      {/* Filters (grid mode only) */}
+      {viewMode === "grid" && (
+        <TaskFilters
+          search={filters.search}
+          status={filters.status}
+          priority={filters.priority}
+          sortBy={filters.sortBy}
+          sortOrder={filters.sortOrder}
+          onSearchChange={filters.setSearch}
+          onStatusChange={filters.setStatus}
+          onPriorityChange={filters.setPriority}
+          onSortByChange={filters.setSortBy}
+          onSortOrderChange={filters.setSortOrder}
+          onReset={filters.reset}
+        />
+      )}
 
+      {/* Content */}
       {isLoading ? (
         <TaskSkeletonGrid />
+      ) : viewMode === "kanban" ? (
+        <KanbanBoard
+          tasks={tasks}
+          onStatusChange={handleStatusChange}
+          onClick={(id) => setDetailTaskId(id)}
+        />
       ) : tasks.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
@@ -221,6 +290,19 @@ export default function TasksPage() {
         }}
         teamMembers={teamData?.data ?? []}
       />
+
+      <LabelsManager open={labelsOpen} onOpenChange={setLabelsOpen} />
+
+      {/* Mobile FAB for create task */}
+      {canWrite && (
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="fixed bottom-6 right-6 z-50 sm:hidden flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+          aria-label="Create new task"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      )}
     </div>
   );
 }

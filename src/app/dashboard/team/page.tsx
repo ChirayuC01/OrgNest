@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { useUsers, useCreateUser } from "@/hooks/useUsers";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,13 +35,24 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserPermissionsDialog } from "@/components/users/UserPermissionsDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Users, MoreHorizontal, Plus, ShieldCheck, Loader2, AlertCircle } from "lucide-react";
+import {
+  Users,
+  MoreHorizontal,
+  Plus,
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  Ban,
+  CheckCircle2,
+} from "lucide-react";
+import { api } from "@/lib/api";
 import type { UserPublic, UserRole } from "@/types";
 
 const roleBadge: Record<UserRole, "default" | "secondary" | "outline"> = {
@@ -53,6 +65,9 @@ export default function TeamPage() {
   const canAccess = useAuthStore((s) => s.canAccess);
   const currentUser = useAuthStore((s) => s.user);
   const isAdmin = currentUser?.role === "ADMIN";
+  const isManager = currentUser?.role === "MANAGER";
+  const canWrite = canAccess("USERS", "WRITE");
+  const qc = useQueryClient();
 
   const params = new URLSearchParams({ limit: "100" });
   const { data, isLoading } = useUsers(params);
@@ -64,6 +79,7 @@ export default function TeamPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "EMPLOYEE" });
   const [inviteError, setInviteError] = useState("");
   const [permTarget, setPermTarget] = useState<UserPublic | null>(null);
+  const [banningId, setBanningId] = useState<string | null>(null);
 
   const handleInvite = async () => {
     if (!form.name || !form.email || !form.password) {
@@ -78,11 +94,47 @@ export default function TeamPage() {
       },
       onError: (err) => {
         setInviteError(err instanceof Error ? err.message : "Failed to add user.");
-        // suppress the default toast since we show inline error
         toast.dismiss();
       },
     });
   };
+
+  const handleBanToggle = async (user: UserPublic) => {
+    setBanningId(user.id);
+    try {
+      if (user.isBanned) {
+        await api.delete(`/api/users/${user.id}/ban`);
+        toast.success(`${user.name} has been unbanned`);
+      } else {
+        await api.post(`/api/users/${user.id}/ban`, {});
+        toast.success(`${user.name} has been banned`);
+      }
+      qc.invalidateQueries({ queryKey: ["users"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update ban status");
+    } finally {
+      setBanningId(null);
+    }
+  };
+
+  const canBanUser = (target: UserPublic) => {
+    if (target.id === currentUser?.userId) return false;
+    if (isAdmin && target.role !== "ADMIN") return true;
+    if (isManager && target.role === "EMPLOYEE") return true;
+    return false;
+  };
+
+  const canManagePerms = (target: UserPublic) => {
+    return isAdmin && target.id !== currentUser?.userId;
+  };
+
+  // Filter visible users based on role hierarchy
+  const visibleUsers = users.filter((u) => {
+    if (isAdmin) return true;
+    if (isManager) return u.role !== "ADMIN";
+    // Employees see no one else (this page shouldn't be accessible without USERS.READ)
+    return false;
+  });
 
   if (!canAccess("USERS", "READ")) {
     return (
@@ -94,6 +146,8 @@ export default function TeamPage() {
     );
   }
 
+  const showActions = canWrite || isAdmin;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-4">
@@ -101,11 +155,11 @@ export default function TeamPage() {
           <h2 className="text-xl font-semibold">Team</h2>
           {!isLoading && (
             <p className="text-sm text-muted-foreground mt-0.5">
-              {users.length} {users.length === 1 ? "member" : "members"}
+              {visibleUsers.length} {visibleUsers.length === 1 ? "member" : "members"}
             </p>
           )}
         </div>
-        {isAdmin && (
+        {canWrite && (
           <Button size="sm" onClick={() => setInviteOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" /> Add member
           </Button>
@@ -119,7 +173,8 @@ export default function TeamPage() {
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              {isAdmin && <TableHead className="w-12" />}
+              <TableHead>Status</TableHead>
+              {showActions && <TableHead className="w-12" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -135,12 +190,15 @@ export default function TeamPage() {
                   <TableCell>
                     <Skeleton className="h-5 w-20 rounded-full" />
                   </TableCell>
-                  {isAdmin && <TableCell />}
+                  <TableCell>
+                    <Skeleton className="h-5 w-16 rounded-full" />
+                  </TableCell>
+                  {showActions && <TableCell />}
                 </TableRow>
               ))
-            ) : users.length === 0 ? (
+            ) : visibleUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 4 : 3} className="py-10 text-center">
+                <TableCell colSpan={showActions ? 5 : 4} className="py-10 text-center">
                   <EmptyState
                     icon={Users}
                     title="No team members yet"
@@ -149,24 +207,70 @@ export default function TeamPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
+              visibleUsers.map((user) => (
+                <TableRow key={user.id} className={user.isBanned ? "opacity-60" : ""}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {user.name}
+                      {user.id === currentUser?.userId && (
+                        <span className="text-[10px] text-muted-foreground">(you)</span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
                   <TableCell>
                     <Badge variant={roleBadge[user.role]}>{user.role}</Badge>
                   </TableCell>
-                  {isAdmin && (
+                  <TableCell>
+                    {user.isBanned ? (
+                      <Badge variant="destructive" className="text-xs">
+                        <Ban className="mr-1 h-3 w-3" /> Banned
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-green-600 border-green-200">
+                        <CheckCircle2 className="mr-1 h-3 w-3" /> Active
+                      </Badge>
+                    )}
+                  </TableCell>
+                  {showActions && (
                     <TableCell>
                       <DropdownMenu>
-                        <DropdownMenuTrigger className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors outline-none">
+                        <DropdownMenuTrigger
+                          disabled={user.id === currentUser?.userId}
+                          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors outline-none disabled:opacity-30 disabled:pointer-events-none"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setPermTarget(user)}>
-                            <ShieldCheck className="mr-2 h-4 w-4" />
-                            Manage permissions
-                          </DropdownMenuItem>
+                          {canManagePerms(user) && (
+                            <>
+                              <DropdownMenuItem onClick={() => setPermTarget(user)}>
+                                <ShieldCheck className="mr-2 h-4 w-4" />
+                                Manage permissions
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          {canBanUser(user) && (
+                            <DropdownMenuItem
+                              onClick={() => handleBanToggle(user)}
+                              disabled={banningId === user.id}
+                              className={
+                                user.isBanned
+                                  ? "text-green-600"
+                                  : "text-destructive focus:text-destructive"
+                              }
+                            >
+                              {banningId === user.id ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : user.isBanned ? (
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                              ) : (
+                                <Ban className="mr-2 h-4 w-4" />
+                              )}
+                              {user.isBanned ? "Unban user" : "Ban user"}
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -231,7 +335,7 @@ export default function TeamPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                  <SelectItem value="MANAGER">Manager</SelectItem>
+                  {isAdmin && <SelectItem value="MANAGER">Manager</SelectItem>}
                 </SelectContent>
               </Select>
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, startTransition } from "react";
 import { Bell } from "lucide-react";
 import {
   DropdownMenu,
@@ -10,15 +10,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-
-interface Notification {
-  id: string;
-  message: string;
-  createdAt: string;
-  read: boolean;
-}
+import type { Notification } from "@/types";
 
 const POLL_MS = 60_000;
 
@@ -34,18 +29,23 @@ function timeAgo(dateStr: string) {
 
 export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch("/api/notifications", { credentials: "include" });
+      const res = await fetch("/api/notifications?limit=20", { credentials: "include" });
       const json = await res.json();
-      if (res.ok) setNotifications(json.data);
+      if (res.ok && json.data) {
+        startTransition(() => {
+          setNotifications(json.data.notifications ?? []);
+          setUnreadCount(json.data.unreadCount ?? 0);
+        });
+      }
     } finally {
-      setLoading(false);
+      startTransition(() => setLoading(false));
     }
   };
 
@@ -57,13 +57,27 @@ export function NotificationBell() {
     };
   }, []);
 
-  const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
+  const markAllRead = async () => {
+    await fetch("/api/notifications/read-all", { method: "POST", credentials: "include" });
+    startTransition(() => {
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setUnreadCount(0);
+    });
+  };
+
+  const markOneRead = async (id: string) => {
+    await fetch(`/api/notifications/${id}`, { method: "PATCH", credentials: "include" });
+    startTransition(() => {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    });
+  };
 
   const handleOpen = (v: boolean) => {
     setOpen(v);
-    if (v) {
-      // Mark all visible as read when opening
-      setReadIds(new Set(notifications.map((n) => n.id)));
+    // Auto-mark all as read when opening the panel
+    if (v && unreadCount > 0) {
+      markAllRead();
     }
   };
 
@@ -77,9 +91,24 @@ export function NotificationBell() {
           </span>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 max-h-[420px] overflow-y-auto">
+      <DropdownMenuContent align="end" className="w-80 max-h-[480px] overflow-y-auto">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Recent activity</DropdownMenuLabel>
+          <div className="flex items-center justify-between px-3 py-1.5">
+            <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={(e) => {
+                  e.preventDefault();
+                  markAllRead();
+                }}
+              >
+                Mark all read
+              </Button>
+            )}
+          </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {loading ? (
@@ -89,29 +118,30 @@ export function NotificationBell() {
             ))}
           </div>
         ) : notifications.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No recent activity</p>
+          <p className="text-sm text-muted-foreground text-center py-6">
+            You&apos;re all caught up!
+          </p>
         ) : (
           <div className="divide-y divide-border">
-            {notifications.map((n) => {
-              const isUnread = !readIds.has(n.id);
-              return (
-                <div
-                  key={n.id}
-                  className={cn(
-                    "flex items-start gap-2.5 px-3 py-2.5 text-sm",
-                    isUnread && "bg-primary/5"
-                  )}
-                >
-                  {isUnread && (
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                  )}
-                  <div className={cn("flex-1 min-w-0", !isUnread && "pl-4")}>
-                    <p className="leading-snug line-clamp-2">{n.message}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{timeAgo(n.createdAt)}</p>
-                  </div>
+            {notifications.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => !n.read && markOneRead(n.id)}
+                className={cn(
+                  "w-full flex items-start gap-2.5 px-3 py-2.5 text-sm text-left transition-colors hover:bg-muted/60",
+                  !n.read && "bg-primary/5"
+                )}
+              >
+                {!n.read && (
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                )}
+                <div className={cn("flex-1 min-w-0", n.read && "pl-4")}>
+                  <p className="font-medium text-xs text-muted-foreground mb-0.5">{n.title}</p>
+                  <p className="leading-snug line-clamp-2">{n.message}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{timeAgo(n.createdAt)}</p>
                 </div>
-              );
-            })}
+              </button>
+            ))}
           </div>
         )}
       </DropdownMenuContent>

@@ -31,6 +31,7 @@ import { error } from "@/helper/apiResponse";
 import { createAuditLog } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { rateLimit } from "@/lib/rateLimit";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -39,6 +40,20 @@ const loginSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    // Rate limit: 10 attempts per 15 minutes per IP
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      req.headers.get("x-real-ip") ??
+      "unknown";
+    const rl = rateLimit(`login:${ip}`, { limit: 10, windowSeconds: 15 * 60 });
+    if (!rl.allowed) {
+      return error(
+        `Too many login attempts. Try again in ${Math.ceil((rl.resetAt - Date.now()) / 60000)} minutes.`,
+        429,
+        "RATE_LIMITED"
+      );
+    }
+
     const body = await req.json();
     const parsed = loginSchema.safeParse(body);
 
@@ -52,6 +67,14 @@ export async function POST(req: Request) {
 
     if (!user || !(await comparePassword(password, user.password))) {
       return error("Invalid credentials", 401, "INVALID_CREDENTIALS");
+    }
+
+    if (user.isBanned) {
+      return error(
+        "Your account has been suspended. Please contact your administrator.",
+        403,
+        "ACCOUNT_BANNED"
+      );
     }
 
     const payload = {

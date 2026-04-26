@@ -16,7 +16,7 @@ const taskQuerySchema = z.object({
   sortBy: z.enum(["createdAt", "updatedAt", "dueDate", "priority", "title"]).default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(500).default(20),
 });
 
 const createTaskSchema = z.object({
@@ -26,6 +26,7 @@ const createTaskSchema = z.object({
   priority: z.coerce.number().int().min(1).max(3).default(2),
   assignedToId: z.string().optional(),
   dueDate: z.string().optional(),
+  labelIds: z.array(z.string()).optional(),
 });
 
 /**
@@ -124,7 +125,12 @@ export const GET = withLogging(async (req: Request) => {
       orderBy: { [p.sortBy]: p.sortOrder },
       skip: (p.page - 1) * p.limit,
       take: p.limit,
-      include: { assignedTo: { select: { id: true, name: true, email: true } } },
+      include: {
+        assignedTo: { select: { id: true, name: true, email: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
+        labels: { include: { label: true } },
+        subtasks: { orderBy: { position: "asc" } },
+      },
     }),
     prisma.task.count({ where }),
   ]);
@@ -169,7 +175,7 @@ export const POST = withLogging(async (req: Request) => {
   const parsed = createTaskSchema.safeParse(body);
   if (!parsed.success) return error(parsed.error.issues[0].message, 400, "VALIDATION_ERROR");
 
-  const { title, description, status, priority, assignedToId, dueDate } = parsed.data;
+  const { title, description, status, priority, assignedToId, dueDate, labelIds } = parsed.data;
 
   // Verify assignedToId belongs to same tenant
   if (assignedToId) {
@@ -188,10 +194,37 @@ export const POST = withLogging(async (req: Request) => {
       priority,
       tenantId: authResult.tenantId,
       assignedToId: assignedToId ?? null,
+      assignedById: assignedToId ? authResult.userId : null,
+      createdById: authResult.userId,
       dueDate: dueDate ? new Date(dueDate) : null,
+      ...(labelIds &&
+        labelIds.length > 0 && {
+          labels: {
+            create: labelIds.map((labelId) => ({ labelId })),
+          },
+        }),
     },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    include: {
+      assignedTo: { select: { id: true, name: true, email: true } },
+      createdBy: { select: { id: true, name: true, email: true } },
+      labels: { include: { label: true } },
+      subtasks: { orderBy: { position: "asc" } },
+    },
   });
+
+  // Notify assignee if different from creator
+  if (assignedToId && assignedToId !== authResult.userId) {
+    await prisma.notification.create({
+      data: {
+        userId: assignedToId,
+        tenantId: authResult.tenantId,
+        type: "TASK_ASSIGNED",
+        title: "You've been assigned a task",
+        message: `You were assigned to "${task.title}"`,
+        taskId: task.id,
+      },
+    });
+  }
 
   await createAuditLog({
     action: "CREATE_TASK",

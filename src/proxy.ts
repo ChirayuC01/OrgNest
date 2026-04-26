@@ -3,8 +3,6 @@ import { verifyToken } from "@/lib/verify";
 
 const PUBLIC_PATHS = [
   "/",
-  "/login",
-  "/signup",
   "/api/auth/login",
   "/api/auth/signup",
   "/api/auth/refresh",
@@ -13,13 +11,11 @@ const PUBLIC_PATHS = [
   "/api-docs",
 ];
 
+// Pages that should redirect to /dashboard if already logged in
+const AUTH_PAGES = ["/login", "/signup"];
+
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
-  // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    return NextResponse.next();
-  }
 
   // Allow Next.js internals
   if (
@@ -31,8 +27,22 @@ export function proxy(req: NextRequest) {
   }
 
   const token = req.cookies.get("access_token")?.value;
+  const payload = token ? verifyToken(token) : null;
 
-  if (!token || !verifyToken(token)) {
+  // Redirect authenticated users away from login/signup
+  if (AUTH_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    if (payload) {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Allow public paths
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return NextResponse.next();
+  }
+
+  if (!payload) {
     // For API routes: return 401 JSON
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(

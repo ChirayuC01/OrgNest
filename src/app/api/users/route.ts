@@ -83,7 +83,15 @@ export const GET = withLogging(async (req: Request) => {
   const [users, total] = await prisma.$transaction([
     prisma.user.findMany({
       where,
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isBanned: true,
+        bannedAt: true,
+        createdAt: true,
+      },
       orderBy: { [p.sortBy]: p.sortOrder },
       skip: (p.page - 1) * p.limit,
       take: p.limit,
@@ -142,7 +150,15 @@ export const POST = withLogging(async (req: Request) => {
 
   const user = await prisma.user.create({
     data: { name, email, password: hashedPassword, role, tenantId: authResult.tenantId },
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isBanned: true,
+      bannedAt: true,
+      createdAt: true,
+    },
   });
 
   await createAuditLog({

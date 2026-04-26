@@ -4,6 +4,46 @@ import { requirePermission } from "@/helper/requireAuth";
 import { createAuditLog } from "@/lib/audit";
 import { success, error } from "@/helper/apiResponse";
 
+// ─── Status transition rules ──────────────────────────────────────────────────
+// Employee:  can move to IN_REVIEW only
+// Manager:   can move to DONE (from IN_REVIEW) or any non-DONE status
+// Admin:     unrestricted
+
+const ALLOWED_EMPLOYEE_TRANSITIONS: Record<string, string[]> = {
+  TODO: ["IN_PROGRESS"],
+  IN_PROGRESS: ["IN_REVIEW"],
+  IN_REVIEW: [],
+  DONE: [],
+};
+
+const ALLOWED_MANAGER_TRANSITIONS: Record<string, string[]> = {
+  TODO: ["IN_PROGRESS"],
+  IN_PROGRESS: ["IN_REVIEW", "TODO"],
+  IN_REVIEW: ["DONE", "IN_PROGRESS"],
+  DONE: ["IN_REVIEW"],
+};
+
+function validateStatusTransition(
+  currentStatus: string,
+  newStatus: string,
+  role: string
+): string | null {
+  if (role === "ADMIN") return null; // Admins unrestricted
+
+  const allowed =
+    role === "MANAGER"
+      ? (ALLOWED_MANAGER_TRANSITIONS[currentStatus] ?? [])
+      : (ALLOWED_EMPLOYEE_TRANSITIONS[currentStatus] ?? []);
+
+  if (!allowed.includes(newStatus)) {
+    if (role === "EMPLOYEE") {
+      return `Employees can only move tasks forward in the workflow. Allowed next step: ${allowed.join(", ") || "none"}`;
+    }
+    return `Cannot move task from ${currentStatus} to ${newStatus}`;
+  }
+  return null;
+}
+
 // Full update schema for manager/admin
 const patchTaskSchema = z.object({
   title: z.string().min(1).max(255).optional(),
@@ -12,6 +52,7 @@ const patchTaskSchema = z.object({
   priority: z.coerce.number().int().min(1).max(3).optional(),
   assignedToId: z.string().nullable().optional(),
   dueDate: z.string().nullable().optional(),
+  labelIds: z.array(z.string()).optional(),
 });
 
 // Employees may only change status
@@ -19,11 +60,20 @@ const employeePatchSchema = z.object({
   status: z.enum(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]),
 });
 
+// Task include shape for consistent responses
+const taskInclude = {
+  assignedTo: { select: { id: true, name: true, email: true } },
+  assignedBy: { select: { id: true, name: true, email: true } },
+  createdBy: { select: { id: true, name: true, email: true } },
+  labels: { include: { label: true } },
+  subtasks: { orderBy: { position: "asc" as const } },
+} as const;
+
 /**
  * @swagger
  * /api/tasks/{taskId}:
  *   get:
- *     summary: Get a single task with history and comments
+ *     summary: Get a single task with history, comments, labels and subtasks
  *     tags: [Tasks]
  *     security:
  *       - cookieAuth: []
@@ -54,14 +104,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ taskId:
       ...(isEmployee && { assignedToId: authResult.userId }),
     },
     include: {
-      assignedTo: { select: { id: true, name: true, email: true } },
+      ...taskInclude,
       history: {
         orderBy: { createdAt: "desc" },
         include: { user: { select: { name: true, email: true } } },
       },
       comments: {
         orderBy: { createdAt: "asc" },
-        include: { user: { select: { name: true, email: true } } },
+        include: { user: { select: { id: true, name: true, email: true } } },
       },
     },
   });
@@ -75,7 +125,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ taskId:
  * @swagger
  * /api/tasks/{taskId}:
  *   patch:
- *     summary: Update a task — managers/admins can edit all fields, employees can only change status
+ *     summary: Update a task — managers/admins can edit all fields, employees can only change status (with transition rules)
  *     tags: [Tasks]
  *     security:
  *       - cookieAuth: []
@@ -98,10 +148,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ taskId:
  *         $ref: '#/components/responses/NotFound'
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ taskId: string }> }) {
-  console.log("req---", req);
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
-  console.log("authResult---", authResult);
 
   const { taskId } = await params;
   const isEmployee = authResult.role === "EMPLOYEE";
@@ -112,29 +160,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
       tenantId: authResult.tenantId,
       ...(isEmployee && { assignedToId: authResult.userId }),
     },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    include: {
+      assignedTo: { select: { id: true, name: true, email: true } },
+    },
+    // Select createdById for notification purposes
   });
   if (!existing) return error("Task not found", 404, "NOT_FOUND");
 
   const body = await req.json();
-  console.log("body---", body);
 
-
-  // Employees can only update status
+  // ── Employee path (status only) ────────────────────────────────────────────
   if (isEmployee) {
     const parsed = employeePatchSchema.safeParse(body);
     if (!parsed.success) return error(parsed.error.issues[0].message, 400, "VALIDATION_ERROR");
 
-    const oldStatus = existing.status;
     const newStatus = parsed.data.status;
+    const oldStatus = existing.status;
+
+    // Enforce transition rules
+    const transitionError = validateStatusTransition(oldStatus, newStatus, "EMPLOYEE");
+    if (transitionError) return error(transitionError, 403, "INVALID_TRANSITION");
 
     const task = await prisma.task.update({
       where: { id: taskId },
       data: { status: newStatus },
-      include: { assignedTo: { select: { id: true, name: true, email: true } } },
+      include: taskInclude,
     });
 
-    // Record history
     if (oldStatus !== newStatus) {
       await prisma.taskHistory.create({
         data: {
@@ -152,12 +204,33 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
         tenantId: authResult.tenantId,
         metadata: { title: existing.title, from: oldStatus, to: newStatus },
       });
+
+      // Notify the task creator and assignee (if different from changer)
+      const notifyUserIds = [
+        ...new Set(
+          [existing.assignedToId, existing.createdById].filter(
+            (id): id is string => !!id && id !== authResult.userId
+          )
+        ),
+      ];
+      if (notifyUserIds.length > 0) {
+        await prisma.notification.createMany({
+          data: notifyUserIds.map((userId) => ({
+            userId,
+            tenantId: authResult.tenantId,
+            type: "TASK_STATUS_CHANGED" as const,
+            title: "Task status updated",
+            message: `"${existing.title}" moved from ${oldStatus.replace("_", " ")} to ${newStatus.replace("_", " ")}`,
+            taskId,
+          })),
+        });
+      }
     }
 
     return success(task);
   }
 
-  // Managers and Admins — need WRITE permission for full edits
+  // ── Manager / Admin path ───────────────────────────────────────────────────
   const writeCheck = await requirePermission("TASKS", "WRITE");
   if (writeCheck instanceof Response) return writeCheck;
 
@@ -165,6 +238,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
   if (!parsed.success) return error(parsed.error.issues[0].message, 400, "VALIDATION_ERROR");
 
   const data = parsed.data;
+
+  // Enforce status transition rules for managers too
+  if (data.status && data.status !== existing.status) {
+    const transitionError = validateStatusTransition(existing.status, data.status, authResult.role);
+    if (transitionError) return error(transitionError, 403, "INVALID_TRANSITION");
+  }
 
   // Build history diff
   const FIELD_LABELS: Record<string, string> = {
@@ -218,6 +297,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
     }
   }
 
+  // Determine assignedById if assignee is changing
+  const assignedByIdUpdate =
+    data.assignedToId !== undefined && data.assignedToId !== existing.assignedToId
+      ? { assignedById: data.assignedToId ? authResult.userId : null }
+      : {};
+
   const task = await prisma.task.update({
     where: { id: taskId },
     data: {
@@ -229,11 +314,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
       ...(data.dueDate !== undefined && {
         dueDate: data.dueDate ? new Date(data.dueDate) : null,
       }),
+      ...assignedByIdUpdate,
     },
-    include: { assignedTo: { select: { id: true, name: true, email: true } } },
+    include: taskInclude,
   });
 
-  // Persist history if anything actually changed
+  // Update labels if provided
+  if (data.labelIds !== undefined) {
+    await prisma.taskLabel.deleteMany({ where: { taskId } });
+    if (data.labelIds.length > 0) {
+      await prisma.taskLabel.createMany({
+        data: data.labelIds.map((labelId) => ({ taskId, labelId })),
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  // Persist history
   if (changes.length > 0) {
     await prisma.taskHistory.create({
       data: { taskId, userId: authResult.userId, changes },
@@ -248,6 +345,47 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
     tenantId: authResult.tenantId,
     metadata: { title: task.title, changes },
   });
+
+  // Notify newly assigned user
+  if (
+    data.assignedToId &&
+    data.assignedToId !== existing.assignedToId &&
+    data.assignedToId !== authResult.userId
+  ) {
+    await prisma.notification.create({
+      data: {
+        userId: data.assignedToId,
+        tenantId: authResult.tenantId,
+        type: "TASK_ASSIGNED",
+        title: "You've been assigned a task",
+        message: `You were assigned to "${task.title}"`,
+        taskId,
+      },
+    });
+  }
+
+  // Notify on status change
+  if (data.status && data.status !== existing.status) {
+    const notifyUserIds = [
+      ...new Set(
+        [task.assignedToId, existing.createdById].filter(
+          (id): id is string => !!id && id !== authResult.userId
+        )
+      ),
+    ];
+    if (notifyUserIds.length > 0) {
+      await prisma.notification.createMany({
+        data: notifyUserIds.map((userId) => ({
+          userId,
+          tenantId: authResult.tenantId,
+          type: "TASK_STATUS_CHANGED" as const,
+          title: "Task status updated",
+          message: `"${task.title}" moved from ${existing.status.replace(/_/g, " ")} to ${data.status!.replace(/_/g, " ")}`,
+          taskId,
+        })),
+      });
+    }
+  }
 
   return success(task);
 }

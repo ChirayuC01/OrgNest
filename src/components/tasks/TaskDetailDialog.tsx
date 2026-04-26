@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, startTransition } from "react";
+import { useState, useEffect, startTransition, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -17,12 +18,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Clock, MessageSquare, History, Send } from "lucide-react";
+import {
+  Loader2,
+  Clock,
+  MessageSquare,
+  History,
+  Send,
+  CheckSquare,
+  Tag,
+  Plus,
+  UserCheck,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTask, useUpdateTask, useAddComment } from "@/hooks/useTasks";
 import { useAuthStore } from "@/store/authStore";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
-import type { UserPublic } from "@/types";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { taskKeys } from "@/hooks/useTasks";
+import type { UserPublic, TaskStatus, Subtask, Label as LabelType } from "@/types";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
   {
@@ -49,6 +66,8 @@ const STATUS_OPTIONS = [
 
 const PRIORITY_LABEL: Record<number, string> = { 1: "Low", 2: "Medium", 3: "High" };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString("en-US", {
     month: "short",
@@ -56,6 +75,16 @@ function formatDate(dateStr: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDateGroup(dateStr: string) {
+  const d = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 function initials(name: string) {
@@ -66,6 +95,161 @@ function initials(name: string) {
     .toUpperCase()
     .slice(0, 2);
 }
+
+// ─── Subtasks Panel ───────────────────────────────────────────────────────────
+
+function SubtasksPanel({ taskId, canEdit }: { taskId: string; canEdit: boolean }) {
+  const qc = useQueryClient();
+  const [newTitle, setNewTitle] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { data: subtasks = [], isLoading } = useQuery<Subtask[]>({
+    queryKey: ["subtasks", taskId],
+    queryFn: () => api.get<Subtask[]>(`/api/tasks/${taskId}/subtasks`),
+  });
+
+  const createSubtask = useMutation({
+    mutationFn: (title: string) => api.post<Subtask>(`/api/tasks/${taskId}/subtasks`, { title }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["subtasks", taskId] });
+      setNewTitle("");
+    },
+    onError: () => toast.error("Failed to add subtask"),
+  });
+
+  const toggleSubtask = useMutation({
+    mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
+      api.patch<Subtask>(`/api/tasks/${taskId}/subtasks/${id}`, { completed }),
+    onMutate: async ({ id, completed }) => {
+      await qc.cancelQueries({ queryKey: ["subtasks", taskId] });
+      const snap = qc.getQueryData<Subtask[]>(["subtasks", taskId]);
+      qc.setQueryData<Subtask[]>(["subtasks", taskId], (prev) =>
+        prev?.map((s) => (s.id === id ? { ...s, completed } : s))
+      );
+      return { snap };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snap) qc.setQueryData(["subtasks", taskId], ctx.snap);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["subtasks", taskId] }),
+  });
+
+  const deleteSubtask = useMutation({
+    mutationFn: (id: string) =>
+      api.delete<{ message: string }>(`/api/tasks/${taskId}/subtasks/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["subtasks", taskId] }),
+    onError: () => toast.error("Failed to delete subtask"),
+  });
+
+  const completed = subtasks.filter((s) => s.completed).length;
+  const pct = subtasks.length > 0 ? Math.round((completed / subtasks.length) * 100) : 0;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {subtasks.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground w-12 text-right">
+            {completed}/{subtasks.length}
+          </span>
+        </div>
+      )}
+
+      <ul className="space-y-1.5">
+        {subtasks.map((s) => (
+          <li key={s.id} className="flex items-center gap-2 group">
+            <Checkbox
+              id={`subtask-${s.id}`}
+              checked={s.completed}
+              onCheckedChange={(checked: boolean | "indeterminate") =>
+                toggleSubtask.mutate({ id: s.id, completed: checked === true })
+              }
+            />
+            <label
+              htmlFor={`subtask-${s.id}`}
+              className={cn(
+                "flex-1 text-sm cursor-pointer select-none",
+                s.completed && "line-through text-muted-foreground"
+              )}
+            >
+              {s.title}
+            </label>
+            {canEdit && (
+              <button
+                onClick={() => deleteSubtask.mutate(s.id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {canEdit && (
+        <div className="flex gap-2">
+          <Input
+            ref={inputRef}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Add a subtask…"
+            className="h-8 text-sm"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newTitle.trim()) {
+                createSubtask.mutate(newTitle.trim());
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            disabled={!newTitle.trim() || createSubtask.isPending}
+            onClick={() => createSubtask.mutate(newTitle.trim())}
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Labels display ───────────────────────────────────────────────────────────
+
+function LabelsDisplay({ labels }: { labels: { label: LabelType }[] }) {
+  if (labels.length === 0) return <span className="text-sm text-muted-foreground">No labels</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {labels.map(({ label }) => (
+        <span
+          key={label.id}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"
+          style={{ backgroundColor: label.color }}
+        >
+          {label.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main dialog ──────────────────────────────────────────────────────────────
 
 interface TaskDetailDialogProps {
   taskId: string | null;
@@ -84,6 +268,7 @@ export function TaskDetailDialog({
   const isEmployee = user?.role === "EMPLOYEE";
 
   const { data: task, isLoading } = useTask(taskId);
+  const qc = useQueryClient();
 
   // Edit state (manager/admin)
   const [editing, setEditing] = useState(false);
@@ -93,6 +278,7 @@ export function TaskDetailDialog({
   const [editAssignee, setEditAssignee] = useState<string | null>(null);
   const [editDue, setEditDue] = useState("");
   const [editStatus, setEditStatus] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
 
   // Comment state
   const [comment, setComment] = useState("");
@@ -100,7 +286,7 @@ export function TaskDetailDialog({
   const updateTask = useUpdateTask();
   const addComment = useAddComment(taskId ?? "");
 
-  // Sync edit form when task loads or changes
+  // Sync edit form when task loads
   useEffect(() => {
     if (!task) return;
     startTransition(() => {
@@ -116,7 +302,14 @@ export function TaskDetailDialog({
 
   const handleStatusChange = (newStatus: string) => {
     if (!taskId) return;
-    updateTask.mutate({ id: taskId, status: newStatus as import("@/types").TaskStatus });
+    updateTask.mutate(
+      { id: taskId, status: newStatus as TaskStatus },
+      {
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Cannot make that status change");
+        },
+      }
+    );
   };
 
   const handleSave = () => {
@@ -129,12 +322,16 @@ export function TaskDetailDialog({
         priority: Number(editPriority),
         assignedToId: editAssignee,
         dueDate: editDue || null,
-        status: editStatus as import("@/types").TaskStatus,
+        status: editStatus as TaskStatus,
       },
       {
         onSuccess: () => {
           setEditing(false);
           toast.success("Task updated");
+          qc.invalidateQueries({ queryKey: taskKeys.detail(taskId) });
+        },
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to update task");
         },
       }
     );
@@ -147,8 +344,33 @@ export function TaskDetailDialog({
     });
   };
 
+  const handleAssignToMe = () => {
+    if (!taskId || !user) return;
+    updateTask.mutate(
+      { id: taskId, assignedToId: user.userId },
+      {
+        onSuccess: () => toast.success("Task assigned to you"),
+        onError: () => toast.error("Failed to assign task"),
+      }
+    );
+  };
+
+  const filteredTeam = teamMembers.filter(
+    (m) =>
+      m.name.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+      m.email.toLowerCase().includes(assigneeSearch.toLowerCase())
+  );
+
   const statusOpt =
     STATUS_OPTIONS.find((s) => s.value === (task?.status ?? "TODO")) ?? STATUS_OPTIONS[0];
+
+  // Group history by date
+  const groupedHistory = task?.history?.reduce<Record<string, typeof task.history>>((acc, h) => {
+    const group = formatDateGroup(h.createdAt);
+    if (!acc[group]) acc[group] = [];
+    acc[group].push(h);
+    return acc;
+  }, {});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -195,9 +417,18 @@ export function TaskDetailDialog({
                 <Clock className="h-3.5 w-3.5" />
                 Details
               </TabsTrigger>
+              <TabsTrigger value="subtasks" className="gap-1.5">
+                <CheckSquare className="h-3.5 w-3.5" />
+                Subtasks
+                {task.subtasks.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] px-1 h-4">
+                    {task.subtasks.filter((s) => s.completed).length}/{task.subtasks.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="history" className="gap-1.5">
                 <History className="h-3.5 w-3.5" />
-                History{" "}
+                History
                 {(task.history?.length ?? 0) > 0 && (
                   <Badge variant="secondary" className="ml-1 text-[10px] px-1 h-4">
                     {task.history?.length}
@@ -206,7 +437,7 @@ export function TaskDetailDialog({
               </TabsTrigger>
               <TabsTrigger value="comments" className="gap-1.5">
                 <MessageSquare className="h-3.5 w-3.5" />
-                Comments{" "}
+                Comments
                 {(task.comments?.length ?? 0) > 0 && (
                   <Badge variant="secondary" className="ml-1 text-[10px] px-1 h-4">
                     {task.comments?.length}
@@ -262,6 +493,14 @@ export function TaskDetailDialog({
                 )}
               </div>
 
+              {/* Labels */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <Tag className="h-3.5 w-3.5" /> Labels
+                </Label>
+                <LabelsDisplay labels={task.labels} />
+              </div>
+
               {/* Priority + Due Date */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -299,24 +538,51 @@ export function TaskDetailDialog({
 
               {/* Assignee — editable only for manager/admin */}
               <div className="space-y-1.5">
-                <Label>Assigned to</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Assigned to</Label>
+                  {canWrite && !isEmployee && task.assignedToId !== user?.userId && (
+                    <button
+                      onClick={handleAssignToMe}
+                      className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <UserCheck className="h-3 w-3" />
+                      Assign to me
+                    </button>
+                  )}
+                </div>
                 {editing && !isEmployee ? (
-                  <Select
-                    value={editAssignee ?? "unassigned"}
-                    onValueChange={(v) => setEditAssignee(v === "unassigned" ? null : v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unassigned">Unassigned</SelectItem>
-                      {teamMembers.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1.5">
+                    <Input
+                      placeholder="Search members…"
+                      value={assigneeSearch}
+                      onChange={(e) => setAssigneeSearch(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                    <Select
+                      value={editAssignee ?? "unassigned"}
+                      onValueChange={(v) => setEditAssignee(v === "unassigned" ? null : v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Unassigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {filteredTeam.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            <div className="flex items-center gap-2">
+                              <Avatar className="h-5 w-5">
+                                <AvatarFallback className="text-[9px]">
+                                  {initials(m.name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span>{m.name}</span>
+                              <span className="text-muted-foreground text-xs">{m.email}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     {task.assignedTo ? (
@@ -338,9 +604,13 @@ export function TaskDetailDialog({
                 )}
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Created {formatDate(task.createdAt)} · Last updated {formatDate(task.updatedAt)}
-              </p>
+              {/* Meta */}
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <p>
+                  Created by {task.createdBy?.name} · {formatDate(task.createdAt)}
+                </p>
+                <p>Last updated {formatDate(task.updatedAt)}</p>
+              </div>
 
               {/* Action buttons */}
               {canWrite && !isEmployee && (
@@ -366,6 +636,11 @@ export function TaskDetailDialog({
               )}
             </TabsContent>
 
+            {/* ── Subtasks tab ── */}
+            <TabsContent value="subtasks" className="mt-0 flex-1 overflow-y-auto pt-4 pr-1">
+              <SubtasksPanel taskId={task.id} canEdit={canWrite || isEmployee} />
+            </TabsContent>
+
             {/* ── History tab ── */}
             <TabsContent value="history" className="mt-0 flex-1 overflow-y-auto pt-4 pr-1">
               {(task.history?.length ?? 0) === 0 ? (
@@ -373,43 +648,56 @@ export function TaskDetailDialog({
                   No changes recorded yet
                 </p>
               ) : (
-                <ol className="relative border-l border-border ml-3 space-y-4">
-                  {task.history?.map((h) => (
-                    <li key={h.id} className="ml-4">
-                      <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full bg-primary/30 border border-primary/50" />
-                      <div className="flex items-center gap-2 mb-1">
-                        <Avatar className="h-5 w-5">
-                          <AvatarFallback className="text-[9px] bg-muted">
-                            {initials(h.user.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs font-medium">{h.user.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(h.createdAt)}
-                        </span>
-                      </div>
-                      <ul className="space-y-1">
-                        {(h.changes as import("@/types").TaskHistoryChange[]).map((c, i) => (
-                          <li key={i} className="text-xs text-muted-foreground">
-                            Changed <span className="font-medium text-foreground">{c.field}</span>
-                            {c.oldValue && (
-                              <>
-                                {" "}
-                                from <span className="line-through">{c.oldValue}</span>
-                              </>
-                            )}
-                            {c.newValue && (
-                              <>
-                                {" "}
-                                to <span className="font-medium text-foreground">{c.newValue}</span>
-                              </>
-                            )}
+                <div className="space-y-6">
+                  {Object.entries(groupedHistory ?? {}).map(([group, entries]) => (
+                    <div key={group}>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                        {group}
+                      </p>
+                      <ol className="relative border-l border-border ml-3 space-y-4">
+                        {entries.map((h) => (
+                          <li key={h.id} className="ml-4">
+                            <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full bg-primary/30 border border-primary/50" />
+                            <div className="flex items-center gap-2 mb-1">
+                              <Avatar className="h-5 w-5">
+                                <AvatarFallback className="text-[9px] bg-muted">
+                                  {initials(h.user.name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-xs font-medium">{h.user.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(h.createdAt)}
+                              </span>
+                            </div>
+                            <ul className="space-y-1">
+                              {(h.changes as import("@/types").TaskHistoryChange[]).map((c, i) => (
+                                <li key={i} className="text-xs text-muted-foreground">
+                                  Changed{" "}
+                                  <span className="font-medium text-foreground">{c.field}</span>
+                                  {c.oldValue && (
+                                    <>
+                                      {" "}
+                                      from <span className="line-through">{c.oldValue}</span>
+                                    </>
+                                  )}
+                                  {c.newValue && (
+                                    <>
+                                      {" "}
+                                      to{" "}
+                                      <span className="font-medium text-foreground">
+                                        {c.newValue}
+                                      </span>
+                                    </>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           </li>
                         ))}
-                      </ul>
-                    </li>
+                      </ol>
+                    </div>
                   ))}
-                </ol>
+                </div>
               )}
             </TabsContent>
 
@@ -424,24 +712,40 @@ export function TaskDetailDialog({
                     No comments yet. Be the first!
                   </p>
                 ) : (
-                  task.comments?.map((c) => (
-                    <div key={c.id} className="flex gap-2.5">
-                      <Avatar className="h-7 w-7 shrink-0">
-                        <AvatarFallback className="text-[10px] bg-primary/20 text-primary">
-                          {initials(c.user.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-xs font-medium">{c.user.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate(c.createdAt)}
-                          </span>
+                  task.comments?.map((c) => {
+                    const isOwn = c.user.id === user?.userId;
+                    return (
+                      <div key={c.id} className={cn("flex gap-2.5", isOwn && "flex-row-reverse")}>
+                        <Avatar className="h-7 w-7 shrink-0">
+                          <AvatarFallback className="text-[10px] bg-primary/20 text-primary">
+                            {initials(c.user.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className={cn("flex-1 min-w-0", isOwn && "items-end flex flex-col")}>
+                          <div
+                            className={cn("flex items-baseline gap-2", isOwn && "flex-row-reverse")}
+                          >
+                            <span className="text-xs font-medium">
+                              {isOwn ? "You" : c.user.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDate(c.createdAt)}
+                            </span>
+                          </div>
+                          <div
+                            className={cn(
+                              "text-sm mt-0.5 break-words rounded-lg px-3 py-2 max-w-[85%]",
+                              isOwn
+                                ? "bg-primary text-primary-foreground ml-auto"
+                                : "bg-muted text-foreground"
+                            )}
+                          >
+                            {c.content}
+                          </div>
                         </div>
-                        <p className="text-sm mt-0.5 break-words">{c.content}</p>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
 
@@ -450,7 +754,7 @@ export function TaskDetailDialog({
                 <Textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Add a comment…"
+                  placeholder="Add a comment… (Ctrl+Enter to send)"
                   rows={2}
                   className="resize-none"
                   onKeyDown={(e) => {
