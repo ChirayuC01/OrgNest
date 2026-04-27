@@ -11,11 +11,11 @@ const createSubtaskSchema = z.object({
 /**
  * GET /api/tasks/:taskId/subtasks
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function GET(_req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
 
   const task = await prisma.task.findUnique({
     where: { id: taskId, tenantId: authResult.tenantId },
@@ -34,11 +34,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ taskId:
 /**
  * POST /api/tasks/:taskId/subtasks
  */
-export async function POST(req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
 
   const task = await prisma.task.findUnique({
     where: {

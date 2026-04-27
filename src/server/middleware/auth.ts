@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { JwtPayload } from "@/lib/auth";
 
 export async function authMiddleware(): Promise<JwtPayload> {
-  const cookieStore = await cookies();
+  const cookieStore = cookies();
   const token = cookieStore.get("access_token")?.value;
 
   if (!token) throw new Error("Unauthorized");

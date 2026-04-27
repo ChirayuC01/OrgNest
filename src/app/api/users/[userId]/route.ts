@@ -28,11 +28,11 @@ const patchUserSchema = z.object({
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function GET(_req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   const user = await prisma.user.findUnique({
     where: { id: userId, tenantId: authResult.tenantId },
@@ -70,11 +70,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ userId:
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function PATCH(req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function PATCH(req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   const existing = await prisma.user.findUnique({
     where: { id: userId, tenantId: authResult.tenantId },
@@ -142,11 +142,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ userId
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "DELETE");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   if (userId === authResult.userId) {
     return error("You cannot delete your own account", 400, "SELF_DELETE");

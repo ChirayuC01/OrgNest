@@ -11,11 +11,11 @@ const patchLabelSchema = z.object({
     .optional(),
 });
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ labelId: string }> }) {
+export async function PATCH(req: Request, { params }: { params: { labelId: string } }) {
   const authResult = await requirePermission("TASKS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
-  const { labelId } = await params;
+  const { labelId } = params;
   const existing = await prisma.label.findUnique({
     where: { id: labelId, tenantId: authResult.tenantId },
   });
@@ -33,11 +33,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ labelI
   return success(label);
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ labelId: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: { labelId: string } }) {
   const authResult = await requirePermission("TASKS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
-  const { labelId } = await params;
+  const { labelId } = params;
   const existing = await prisma.label.findUnique({
     where: { id: labelId, tenantId: authResult.tenantId },
   });

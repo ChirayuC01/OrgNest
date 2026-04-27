@@ -19,7 +19,7 @@ async function resolveTarget(userId: string, tenantId: string) {
   });
 }
 
-export async function POST(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function POST(_req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
@@ -27,7 +27,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ userId
     return error("Employees cannot ban users", 403, "FORBIDDEN");
   }
 
-  const { userId } = await params;
+  const { userId } = params;
 
   if (userId === authResult.userId) {
     return error("You cannot ban yourself", 400, "INVALID_REQUEST");
@@ -70,7 +70,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ userId
   return success(updated);
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "WRITE");
   if (authResult instanceof Response) return authResult;
 
@@ -78,7 +78,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ user
     return error("Employees cannot unban users", 403, "FORBIDDEN");
   }
 
-  const { userId } = await params;
+  const { userId } = params;
   const target = await resolveTarget(userId, authResult.tenantId);
   if (!target) return error("User not found", 404, "NOT_FOUND");
 

@@ -19,7 +19,7 @@ import { env } from "@/lib/env";
 
 export async function POST() {
   try {
-    const cookieStore = await cookies();
+    const cookieStore = cookies();
     const refreshToken = cookieStore.get("refresh_token")?.value;
 
     if (!refreshToken) {

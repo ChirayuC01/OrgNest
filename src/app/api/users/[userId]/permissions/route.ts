@@ -81,11 +81,11 @@ const upsertSchema = z.object({
 
 // GET /api/users/:userId/permissions
 // Returns the fully-resolved permission map for a specific user (ADMIN only)
-export async function GET(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function GET(_req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "MANAGE");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   const targetUser = await prisma.user.findUnique({
     where: { id: userId, tenantId: authResult.tenantId },
@@ -111,11 +111,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ userId:
 
 // PUT /api/users/:userId/permissions
 // Upserts a per-user module permission override (ADMIN only)
-export async function PUT(req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function PUT(req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "MANAGE");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   const body = await req.json();
   const parsed = upsertSchema.safeParse(body);
@@ -151,11 +151,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ userId: 
 
 // DELETE /api/users/:userId/permissions
 // Removes a specific override, restoring the role default (ADMIN only)
-export async function DELETE(req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function DELETE(req: Request, { params }: { params: { userId: string } }) {
   const authResult = await requirePermission("USERS", "MANAGE");
   if (authResult instanceof Response) return authResult;
 
-  const { userId } = await params;
+  const { userId } = params;
 
   const body = await req.json();
   const parsed = upsertSchema.omit({ granted: true }).safeParse(body);

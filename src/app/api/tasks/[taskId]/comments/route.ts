@@ -35,11 +35,11 @@ const createCommentSchema = z.object({
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function POST(req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
   const isEmployee = authResult.role === "EMPLOYEE";
 
   // Verify task exists and user can access it

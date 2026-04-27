@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken } from "@/lib/verify";
+import { jwtVerify } from "jose";
 
 const PUBLIC_PATHS = [
   "/",
@@ -14,7 +14,24 @@ const PUBLIC_PATHS = [
 // Pages that should redirect to /dashboard if already logged in
 const AUTH_PAGES = ["/login", "/signup"];
 
-export function proxy(req: NextRequest) {
+function getSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return null;
+  return new TextEncoder().encode(secret);
+}
+
+async function verifyMiddlewareToken(token: string): Promise<boolean> {
+  try {
+    const secret = getSecret();
+    if (!secret) return false;
+    await jwtVerify(token, secret);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow Next.js internals
@@ -27,11 +44,11 @@ export function proxy(req: NextRequest) {
   }
 
   const token = req.cookies.get("access_token")?.value;
-  const payload = token ? verifyToken(token) : null;
+  const isValid = token ? await verifyMiddlewareToken(token) : false;
 
   // Redirect authenticated users away from login/signup
   if (AUTH_PAGES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    if (payload) {
+    if (isValid) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
     return NextResponse.next();
@@ -42,7 +59,7 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (!payload) {
+  if (!isValid) {
     // For API routes: return 401 JSON
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(

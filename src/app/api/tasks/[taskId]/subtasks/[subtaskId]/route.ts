@@ -11,12 +11,12 @@ const patchSubtaskSchema = z.object({
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ taskId: string; subtaskId: string }> }
+  { params }: { params: { taskId: string; subtaskId: string } }
 ) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId, subtaskId } = await params;
+  const { taskId, subtaskId } = params;
 
   const task = await prisma.task.findUnique({
     where: {
@@ -45,12 +45,12 @@ export async function PATCH(
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ taskId: string; subtaskId: string }> }
+  { params }: { params: { taskId: string; subtaskId: string } }
 ) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId, subtaskId } = await params;
+  const { taskId, subtaskId } = params;
 
   const task = await prisma.task.findUnique({
     where: {

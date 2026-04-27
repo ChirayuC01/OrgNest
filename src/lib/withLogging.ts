@@ -3,7 +3,7 @@ import { error as apiError } from "@/helper/apiResponse";
 
 type RouteHandler = (
   req: Request,
-  ctx?: { params: Promise<Record<string, string>> }
+  ctx?: { params: Record<string, string> }
 ) => Promise<Response>;
 
 /**
@@ -12,7 +12,7 @@ type RouteHandler = (
  * - Unhandled error catch-all that returns a 500 and logs the full stack
  */
 export function withLogging(handler: RouteHandler): RouteHandler {
-  return async (req: Request, ctx?: { params: Promise<Record<string, string>> }) => {
+  return async (req: Request, ctx?: { params: Record<string, string> }) => {
     const start = Date.now();
     const method = req.method;
     const url = new URL(req.url);

@@ -7,11 +7,11 @@ import { success, error } from "@/helper/apiResponse";
  */
 export async function PATCH(
   _req: Request,
-  { params }: { params: Promise<{ notificationId: string }> }
+  { params }: { params: { notificationId: string } }
 ) {
   try {
     const auth = await authMiddleware();
-    const { notificationId } = await params;
+    const { notificationId } = params;
 
     const notification = await prisma.notification.findUnique({
       where: { id: notificationId, userId: auth.userId },

@@ -88,11 +88,11 @@ const taskInclude = {
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function GET(_req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function GET(_req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
 
   const isEmployee = authResult.role === "EMPLOYEE";
 
@@ -147,11 +147,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ taskId:
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function PATCH(req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "READ");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
   const isEmployee = authResult.role === "EMPLOYEE";
 
   const existing = await prisma.task.findUnique({
@@ -411,11 +411,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ taskId
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ taskId: string }> }) {
+export async function DELETE(_req: Request, { params }: { params: { taskId: string } }) {
   const authResult = await requirePermission("TASKS", "DELETE");
   if (authResult instanceof Response) return authResult;
 
-  const { taskId } = await params;
+  const { taskId } = params;
 
   const existing = await prisma.task.findUnique({
     where: { id: taskId, tenantId: authResult.tenantId },
