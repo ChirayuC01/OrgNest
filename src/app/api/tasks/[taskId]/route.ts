@@ -283,10 +283,19 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     });
   }
   if (data.assignedToId !== undefined && data.assignedToId !== existing.assignedToId) {
+    // Resolve new assignee name so history stores human-readable values, not raw IDs
+    let newAssigneeName: string | null = null;
+    if (data.assignedToId) {
+      const newAssignee = await prisma.user.findUnique({
+        where: { id: data.assignedToId },
+        select: { name: true },
+      });
+      newAssigneeName = newAssignee?.name ?? data.assignedToId;
+    }
     changes.push({
       field: FIELD_LABELS.assignedToId,
       oldValue: existing.assignedTo?.name ?? existing.assignedToId ?? null,
-      newValue: data.assignedToId ?? null,
+      newValue: newAssigneeName,
     });
   }
   if (data.dueDate !== undefined) {

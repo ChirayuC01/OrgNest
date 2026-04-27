@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Calendar, AlertCircle, ChevronDown } from "lucide-react";
@@ -71,6 +72,12 @@ function isOverdue(dateStr: string) {
 export function TaskCard({ task, onStatusChange, onClick }: TaskCardProps) {
   const status = statusMap[task.status] ?? STATUS_OPTIONS[0];
   const priority = priorityConfig[task.priority] ?? priorityConfig[2];
+
+  // Prevent the card's onClick from firing immediately after a status-dropdown
+  // interaction. Without this, the mouseup after selecting a status item can
+  // land on the card body (once the portal closes) and open the detail dialog.
+  const suppressNextClickRef = useRef(false);
+
   const assigneeInitials = task.assignedTo?.name
     ? task.assignedTo.name
         .split(" ")
@@ -82,49 +89,68 @@ export function TaskCard({ task, onStatusChange, onClick }: TaskCardProps) {
 
   const overdue = task.dueDate && task.status !== "DONE" && isOverdue(task.dueDate);
 
+  const handleCardClick = () => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    onClick?.(task.id);
+  };
+
   return (
     <Card
       className={cn(
         "group hover:shadow-md hover:border-primary/20 transition-all duration-200",
         onClick && "cursor-pointer"
       )}
-      onClick={onClick ? () => onClick(task.id) : undefined}
+      onClick={onClick ? handleCardClick : undefined}
     >
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          {/* Status badge — clickable if onStatusChange provided */}
+          {/* Status badge — wrapping div stops all click propagation from the
+              dropdown area so the card opener never fires via bubbling */}
           {onStatusChange ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-opacity hover:opacity-80",
-                  status.className
-                )}
-              >
-                {status.label}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {STATUS_OPTIONS.map((opt) => (
-                  <DropdownMenuItem
-                    key={opt.value}
-                    onClick={() => onStatusChange(task.id, opt.value)}
-                    className={cn(task.status === opt.value && "font-semibold")}
-                  >
-                    <span
-                      className={cn("w-2 h-2 rounded-full mr-2 inline-block", {
-                        "bg-slate-400": opt.value === "TODO",
-                        "bg-blue-500": opt.value === "IN_PROGRESS",
-                        "bg-amber-500": opt.value === "IN_REVIEW",
-                        "bg-green-500": opt.value === "DONE",
-                      })}
-                    />
-                    {opt.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-opacity hover:opacity-80",
+                    status.className
+                  )}
+                >
+                  {status.label}
+                  <ChevronDown className="h-3 w-3" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  {STATUS_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      onSelect={() => {
+                        // Mark that the very next card click should be swallowed.
+                        // This covers the case where mouseup after selecting an
+                        // item in the portal lands on the underlying card body.
+                        suppressNextClickRef.current = true;
+                        setTimeout(() => {
+                          suppressNextClickRef.current = false;
+                        }, 300);
+                        onStatusChange(task.id, opt.value);
+                      }}
+                      className={cn(task.status === opt.value && "font-semibold")}
+                    >
+                      <span
+                        className={cn("w-2 h-2 rounded-full mr-2 inline-block", {
+                          "bg-slate-400": opt.value === "TODO",
+                          "bg-blue-500": opt.value === "IN_PROGRESS",
+                          "bg-amber-500": opt.value === "IN_REVIEW",
+                          "bg-green-500": opt.value === "DONE",
+                        })}
+                      />
+                      {opt.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ) : (
             <span
               className={cn(
